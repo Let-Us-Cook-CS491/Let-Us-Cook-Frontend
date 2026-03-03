@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.cache/
+.tmp/
+.vite/
+coverage/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
