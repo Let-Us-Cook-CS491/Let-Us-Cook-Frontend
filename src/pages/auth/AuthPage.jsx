@@ -105,6 +105,7 @@ const SignInForm = () => {
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleChange = (event) => {
     setFormValues((prev) => ({
@@ -147,6 +148,7 @@ const SignInForm = () => {
 
       const accessToken = data?.data?.accessToken;
       const refreshToken = data?.data?.refreshToken;
+      const userId = data?.data?.user_id;
 
       if (accessToken) {
         localStorage.setItem('accessToken', accessToken);
@@ -154,8 +156,12 @@ const SignInForm = () => {
       if (refreshToken) {
         localStorage.setItem('refreshToken', refreshToken);
       }
+      if (userId) {
+        localStorage.setItem('userId', String(userId));
+      }
 
-      console.log('Login success:', data);
+      navigate('/dashboard');
+      return;
     } catch (error) {
       console.error(error);
       const message =
@@ -213,6 +219,7 @@ const SignUpForm = () => {
     gender: 'other',
   });
   const [errors, setErrors] = useState({});
+  const navigate = useNavigate();
 
   const handleChange = (event) => {
     setFormValues((prev) => ({
@@ -265,6 +272,7 @@ const SignUpForm = () => {
 
       const accessToken = data?.data?.accessToken;
       const refreshToken = data?.data?.refreshToken;
+      const userId = data?.data?.user_id;
 
       if (accessToken) {
         localStorage.setItem('accessToken', accessToken);
@@ -272,8 +280,12 @@ const SignUpForm = () => {
       if (refreshToken) {
         localStorage.setItem('refreshToken', refreshToken);
       }
+      if (userId) {
+        localStorage.setItem('userId', String(userId));
+      }
 
-      console.log('Sign up success:', data);
+      navigate('/dashboard');
+      return;
     } catch (error) {
       console.error(error);
       const message =
