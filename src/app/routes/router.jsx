@@ -10,6 +10,7 @@ import Recipes from '../../pages/Recipes';
 import MealPlan from '../../pages/MealPlan';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
+import ReceiptUpload from '../../pages/ReceiptUpload';
 
 export const router = createBrowserRouter([
   {
@@ -57,6 +58,11 @@ export const router = createBrowserRouter([
         element: <Profile />,
       },
     ],
+  },
+  // TEMP: Receipt upload testing route. Remove when wiring real navigation.
+  {
+    path: '/receipt-upload',
+    element: <ReceiptUpload />,
   },
 ]);
 
