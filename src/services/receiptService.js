@@ -6,6 +6,8 @@ const uploadPath =
   import.meta.env.VITE_RECEIPT_UPLOAD_PATH || '/receipt/upload';
 const uploadField =
   import.meta.env.VITE_RECEIPT_UPLOAD_FIELD || 'image';
+const approvalPath =
+  import.meta.env.VITE_RECEIPT_APPROVAL_PATH || '/receipt/approve';
 
 export const fetchReceiptUploadConfig = () => {
   return request({
@@ -22,5 +24,13 @@ export const uploadReceiptPhoto = (file) => {
     url: uploadPath,
     method: 'POST',
     body: formData,
+  });
+};
+
+export const submitReceiptApproval = (payload) => {
+  return request({
+    url: approvalPath,
+    method: 'POST',
+    body: payload,
   });
 };
