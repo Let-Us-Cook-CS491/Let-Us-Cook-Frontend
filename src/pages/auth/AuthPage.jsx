@@ -216,6 +216,7 @@ const SignUpForm = () => {
     fullName: '',
     email: '',
     password: '',
+    confirmPassword: '',
     gender: 'other',
   });
   const [errors, setErrors] = useState({});
@@ -243,6 +244,12 @@ const SignUpForm = () => {
       newErrors.password = 'Password is required';
     } else if (formValues.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
+    }
+
+    if (!formValues.confirmPassword.trim()) {
+      newErrors.confirmPassword = 'Please confirm your password';
+    } else if (formValues.confirmPassword !== formValues.password) {
+      newErrors.confirmPassword = 'Passwords do not match';
     }
 
     setErrors(newErrors);
@@ -346,6 +353,22 @@ const SignUpForm = () => {
         value={formValues.password}
         onChange={handleChange}
         error={errors.password}
+      />
+
+      <Input
+        label="Confirm password"
+        name="confirmPassword"
+        type="password"
+        autoComplete="new-password"
+        value={formValues.confirmPassword}
+        onChange={handleChange}
+        error={
+          errors.confirmPassword ||
+          (formValues.confirmPassword &&
+          formValues.confirmPassword !== formValues.password
+            ? 'Passwords do not match'
+            : undefined)
+        }
       />
 
       <Button type="submit" className="mt-2 w-full">
