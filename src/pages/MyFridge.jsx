@@ -23,8 +23,8 @@ import {
 } from '../services/fridgeService';
 import { mapFridgeDocToUi, FRIDGE_CATEGORIES } from '../utils/fridgeItem';
 
-const GRID_COLS = 5;
-const GRID_ROWS = 5;
+const GRID_COLS = 4;
+const GRID_ROWS = 4;
 const SLOT_COUNT = GRID_COLS * GRID_ROWS;
 
 async function fetchFridgeList() {
@@ -307,7 +307,7 @@ const MyFridge = () => {
                 <Loader2 className="h-10 w-10 animate-spin text-brand-green" />
               </div>
             )}
-            <div className="grid w-full min-w-[600px] grid-cols-5 gap-2 sm:gap-3 md:min-w-0">
+            <div className="grid w-full min-w-[480px] grid-cols-4 gap-3 sm:gap-4 md:min-w-0">
               {slots.map((item, index) =>
                 item ? (
                   <IngredientCard
@@ -322,7 +322,7 @@ const MyFridge = () => {
                     type="button"
                     onClick={openAdd}
                     disabled={!isAuthed || loading}
-                    className="flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[148px]"
+                    className="flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[188px]"
                   >
                     <Plus className="h-8 w-8" strokeWidth={1.75} />
                     <span className="text-[10px] font-semibold uppercase tracking-wide">
