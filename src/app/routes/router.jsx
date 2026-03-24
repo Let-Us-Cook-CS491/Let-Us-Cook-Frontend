@@ -57,12 +57,11 @@ export const router = createBrowserRouter([
         path: '/profile',
         element: <Profile />,
       },
+      {
+        path: '/receipt-upload',
+        element: <ReceiptUpload />,
+      },
     ],
-  },
-  // TEMP: Receipt upload testing route. Remove when wiring real navigation.
-  {
-    path: '/receipt-upload',
-    element: <ReceiptUpload />,
   },
 ]);
 
