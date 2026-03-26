@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Button from '../components/ui/Button';
 import { setDietPreferences } from '../services/dietPreferencesService';
+import { loadProfileSnapshot, saveProfileSnapshot } from '../utils/profileStorage';
 
 const dietOptions = [
   'Everything',
@@ -28,6 +29,8 @@ const getErrorMessage = (error) => {
   return 'Something went wrong. Please try again.';
 };
 
+const SNAPSHOT_KEY = 'dietPreferences';
+
 const DietPreferences = () => {
   const [currentDiet, setCurrentDiet] = useState('Everything');
   const [restrictions, setRestrictions] = useState([]);
@@ -35,12 +38,38 @@ const DietPreferences = () => {
     kitchen_briefing: true,
     waste_prevention: true,
   });
+  const [savedSummary, setSavedSummary] = useState(null);
   const [touched, setTouched] = useState(false);
   const [saveState, setSaveState] = useState({
     saving: false,
     error: '',
     success: '',
   });
+
+  useEffect(() => {
+    const snap = loadProfileSnapshot(SNAPSHOT_KEY);
+    if (!snap || typeof snap !== 'object') return;
+
+    if (snap.current_diet && typeof snap.current_diet === 'string') {
+      setCurrentDiet(snap.current_diet);
+    }
+    if (Array.isArray(snap.restrictions)) {
+      setRestrictions(snap.restrictions);
+    }
+    if (snap.smart_alerts && typeof snap.smart_alerts === 'object') {
+      setSmartAlerts((prev) => ({
+        kitchen_briefing:
+          typeof snap.smart_alerts.kitchen_briefing === 'boolean'
+            ? snap.smart_alerts.kitchen_briefing
+            : prev.kitchen_briefing,
+        waste_prevention:
+          typeof snap.smart_alerts.waste_prevention === 'boolean'
+            ? snap.smart_alerts.waste_prevention
+            : prev.waste_prevention,
+      }));
+    }
+    setSavedSummary(snap);
+  }, []);
 
   const validationError = useMemo(() => {
     if (!currentDiet) return 'Please select a current diet.';
@@ -77,7 +106,20 @@ const DietPreferences = () => {
         smart_alerts: smartAlerts,
       };
 
-      await setDietPreferences(payload);
+      const result = await setDietPreferences(payload);
+      const fromApi = result?.data;
+      const snapshot = fromApi && typeof fromApi === 'object'
+        ? {
+            current_diet: fromApi.current_diet ?? payload.current_diet,
+            restrictions: Array.isArray(fromApi.restrictions)
+              ? fromApi.restrictions
+              : payload.restrictions,
+            smart_alerts: fromApi.smart_alerts ?? payload.smart_alerts,
+          }
+        : payload;
+
+      saveProfileSnapshot(SNAPSHOT_KEY, snapshot);
+      setSavedSummary(snapshot);
       setSaveState({
         saving: false,
         error: '',
@@ -98,6 +140,47 @@ const DietPreferences = () => {
       <p className="mt-1 text-sm text-brand-dark/60 uppercase tracking-[0.12em]">
         Tailor recommendations based on your habits
       </p>
+
+      {savedSummary && (
+        <div className="mt-5 rounded-xl border border-brand-green/30 bg-brand-green/5 px-4 py-4 text-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark/70">
+            Your saved preferences
+          </div>
+          <dl className="mt-3 space-y-2 text-brand-dark">
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-brand-dark/60">Diet</dt>
+              <dd className="font-medium">{savedSummary.current_diet || '—'}</dd>
+            </div>
+            <div className="flex flex-col gap-1">
+              <dt className="text-brand-dark/60">Restrictions</dt>
+              <dd>
+                {Array.isArray(savedSummary.restrictions) &&
+                savedSummary.restrictions.length > 0
+                  ? savedSummary.restrictions.join(', ')
+                  : 'None'}
+              </dd>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <dt className="sr-only">Alerts</dt>
+              <dd className="text-brand-dark/80">
+                Kitchen briefing:{' '}
+                <span className="font-medium text-brand-dark">
+                  {savedSummary.smart_alerts?.kitchen_briefing ? 'On' : 'Off'}
+                </span>
+              </dd>
+              <dd className="text-brand-dark/80">
+                Waste prevention:{' '}
+                <span className="font-medium text-brand-dark">
+                  {savedSummary.smart_alerts?.waste_prevention ? 'On' : 'Off'}
+                </span>
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs text-brand-dark/50">
+            Shown from your last successful save on this browser.
+          </p>
+        </div>
+      )}
 
       <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
         {saveState.error && (
