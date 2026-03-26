@@ -1,7 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { fetchHealthGoals, updateHealthGoals } from '../services/healthGoalsService';
+import { fetchHealthGoals, setHealthGoals } from '../services/healthGoalsService';
+import { loadProfileSnapshot, saveProfileSnapshot } from '../utils/profileStorage';
+
+const GOAL_API = {
+  lose: 'Lose Weight',
+  maintain: 'Maintain Weight',
+  gain: 'Gain Weight',
+};
+
+const ACTIVITY_API = {
+  sedentary: 'Sedentary',
+  light: 'Light',
+  moderate: 'Moderate',
+  active: 'Active',
+  very_active: 'Very Active',
+};
+
+const goalTypeFromApi = (goal) => {
+  if (!goal || typeof goal !== 'string') return null;
+  const entry = Object.entries(GOAL_API).find(([, v]) => v === goal);
+  return entry ? entry[0] : null;
+};
+
+const activityFromApi = (level) => {
+  if (!level || typeof level !== 'string') return null;
+  const entry = Object.entries(ACTIVITY_API).find(([, v]) => v === level);
+  if (entry) return entry[0];
+  const lower = level.toLowerCase().replace(/\s+/g, '_');
+  if (ACTIVITY_API[lower]) return lower;
+  return null;
+};
+
+const goalTypeFromLegacyString = (s) => {
+  const lower = s.toLowerCase();
+  if (lower.includes('lose')) return 'lose';
+  if (lower.includes('gain')) return 'gain';
+  if (lower.includes('maintain')) return 'maintain';
+  return null;
+};
 
 const toNumber = (value) => {
   if (value === '' || value === null || value === undefined) return null;
@@ -16,6 +54,8 @@ const getErrorMessage = (error) => {
   if (error.error) return error.error;
   return 'Something went wrong. Please try again.';
 };
+
+const HEALTH_GOALS_SNAPSHOT_KEY = 'healthGoals';
 
 const HealthGoals = () => {
   const [formValues, setFormValues] = useState({
@@ -34,6 +74,7 @@ const HealthGoals = () => {
     error: '',
     success: false,
   });
+  const [savedSummary, setSavedSummary] = useState(null);
 
   const errors = useMemo(() => {
     const next = {};
@@ -77,20 +118,43 @@ const HealthGoals = () => {
     const raw = data?.data ?? data;
     if (!raw || typeof raw !== 'object') return;
 
+    const g = raw.goal ?? raw.goalType;
+    const a = raw.activity_level ?? raw.activityLevel;
+    const cal = raw.calorie_target ?? raw.dailyCalorieTarget;
+
+    const mappedGoal = goalTypeFromApi(g) || (typeof g === 'string' ? goalTypeFromLegacyString(g) : null);
+    const mappedActivity = activityFromApi(a) || (typeof a === 'string' && ACTIVITY_API[a] ? a : null);
+
     setFormValues((prev) => ({
       ...prev,
-      goalType: raw.goalType || prev.goalType,
-      activityLevel: raw.activityLevel || prev.activityLevel,
+      goalType: mappedGoal || prev.goalType,
+      activityLevel: mappedActivity || prev.activityLevel,
       weeklyChangeLbs:
         raw.weeklyChangeLbs === 0 || raw.weeklyChangeLbs
           ? String(raw.weeklyChangeLbs)
           : prev.weeklyChangeLbs,
       dailyCalorieTarget:
-        raw.dailyCalorieTarget === 0 || raw.dailyCalorieTarget
-          ? String(raw.dailyCalorieTarget)
-          : prev.dailyCalorieTarget,
+        cal === 0 || cal ? String(cal) : prev.dailyCalorieTarget,
     }));
   };
+
+  useEffect(() => {
+    const snap = loadProfileSnapshot(HEALTH_GOALS_SNAPSHOT_KEY);
+    if (snap && typeof snap === 'object') {
+      setSavedSummary(snap);
+      const gt = goalTypeFromApi(snap.goal);
+      const al = activityFromApi(snap.activity_level);
+      setFormValues((prev) => ({
+        ...prev,
+        goalType: gt || prev.goalType,
+        activityLevel: al || prev.activityLevel,
+        dailyCalorieTarget:
+          snap.calorie_target === 0 || snap.calorie_target != null
+            ? String(snap.calorie_target)
+            : prev.dailyCalorieTarget,
+      }));
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,23 +206,16 @@ const HealthGoals = () => {
     setSaveState({ saving: true, error: '', success: false });
 
     try {
+      const calorieTarget = toNumber(formValues.dailyCalorieTarget);
       const payload = {
-        // Backend expects snake_case preferences fields.
-        // Map health goals UI into the closest currently-supported preferences shape.
-        current_diet:
-          formValues.goalType === 'lose'
-            ? 'Weight Loss'
-            : formValues.goalType === 'gain'
-              ? 'Weight Gain'
-              : 'Everything',
-        restrictions: [],
-        smart_alerts: {
-          waste_prevention: true,
-          kitchen_briefing: true,
-        },
+        goal: GOAL_API[formValues.goalType],
+        activity_level: ACTIVITY_API[formValues.activityLevel],
+        ...(calorieTarget != null ? { calorie_target: calorieTarget } : {}),
       };
 
-      await updateHealthGoals(payload);
+      await setHealthGoals(payload);
+      saveProfileSnapshot(HEALTH_GOALS_SNAPSHOT_KEY, payload);
+      setSavedSummary(payload);
       setSaveState({ saving: false, error: '', success: true });
     } catch (error) {
       setSaveState({ saving: false, error: getErrorMessage(error), success: false });
@@ -178,6 +235,36 @@ const HealthGoals = () => {
         </div>
 
         <div className="mt-4 h-[1px] bg-black/5" />
+
+        {savedSummary && (
+          <div className="mt-5 rounded-xl border border-brand-green/30 bg-brand-green/5 px-4 py-4 text-sm max-w-xl">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark/70">
+              Your saved health goals
+            </div>
+            <dl className="mt-3 space-y-2 text-brand-dark">
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="text-brand-dark/60">Goal</dt>
+                <dd className="font-medium">{savedSummary.goal || '—'}</dd>
+              </div>
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="text-brand-dark/60">Activity</dt>
+                <dd className="font-medium">{savedSummary.activity_level || '—'}</dd>
+              </div>
+              <div className="flex flex-wrap gap-x-2">
+                <dt className="text-brand-dark/60">Calorie target</dt>
+                <dd className="font-medium">
+                  {savedSummary.calorie_target != null && savedSummary.calorie_target !== ''
+                    ? String(savedSummary.calorie_target)
+                    : 'Not set'}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-xs text-brand-dark/50">
+              Shown from your last successful save on this browser. A server GET endpoint can
+              replace this when available.
+            </p>
+          </div>
+        )}
 
         {loadState.loading ? (
           <div className="mt-6 text-sm text-brand-dark/60">

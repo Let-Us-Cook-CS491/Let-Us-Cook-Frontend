@@ -1,10 +1,7 @@
 import { request } from './apiClient';
 
-// Backend dev currently exposes user preferences at:
-// POST /api/user/set-preferences
-// (see Let-Us-Cook-Backend/src/routes/user.js)
-const updatePath =
-  import.meta.env.VITE_HEALTH_GOALS_UPDATE_PATH || '/user/set-preferences';
+const setHealthGoalsPath =
+  import.meta.env.VITE_SET_HEALTH_GOALS_PATH || '/user/set-health-goals';
 
 const authHeaders = () => {
   const token = localStorage.getItem('accessToken');
@@ -13,17 +10,22 @@ const authHeaders = () => {
 };
 
 export const fetchHealthGoals = () => {
-  // No GET endpoint exists yet in the backend for preferences/goals.
-  // Keep API surface stable; UI will start empty until backend adds GET.
+  // Add GET + VITE_HEALTH_GOALS_GET_PATH when backend exposes it.
   return Promise.resolve(null);
 };
 
-export const updateHealthGoals = (payload) => {
+/**
+ * POST /api/user/set-health-goals
+ * Body: { goal, activity_level, calorie_target? }
+ */
+export const setHealthGoals = (payload) => {
   return request({
-    url: updatePath,
+    url: setHealthGoalsPath,
     method: 'POST',
     body: payload,
     headers: authHeaders(),
   });
 };
 
+/** @deprecated use setHealthGoals */
+export const updateHealthGoals = setHealthGoals;
