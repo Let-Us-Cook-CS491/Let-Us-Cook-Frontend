@@ -11,6 +11,7 @@ import MealPlan from '../../pages/MealPlan';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
 import ReceiptUpload from '../../pages/ReceiptUpload';
+import ExpiryPriority from '../../pages/ExpiryPriority';
 
 export const router = createBrowserRouter([
   {
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
       {
         path: '/my-fridge',
         element: <MyFridge />,
+      },
+      {
+        path: '/expiry/priority',
+        element: <ExpiryPriority />,
       },
       {
         path: '/recipes',
