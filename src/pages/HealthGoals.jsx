@@ -61,7 +61,6 @@ const HealthGoals = () => {
   const [formValues, setFormValues] = useState({
     goalType: 'maintain',
     activityLevel: 'moderate',
-    weeklyChangeLbs: '',
     dailyCalorieTarget: '',
   });
   const [touched, setTouched] = useState({});
@@ -74,22 +73,11 @@ const HealthGoals = () => {
     error: '',
     success: false,
   });
-  const [savedSummary, setSavedSummary] = useState(null);
-
   const errors = useMemo(() => {
     const next = {};
 
     if (!formValues.goalType) next.goalType = 'Select a goal';
     if (!formValues.activityLevel) next.activityLevel = 'Select an activity level';
-
-    const weekly = toNumber(formValues.weeklyChangeLbs);
-    if (formValues.goalType !== 'maintain') {
-      if (weekly === null) {
-        next.weeklyChangeLbs = 'Enter a weekly change';
-      } else if (weekly <= 0 || weekly > 2) {
-        next.weeklyChangeLbs = 'Use a value between 0.1 and 2.0';
-      }
-    }
 
     const calories = toNumber(formValues.dailyCalorieTarget);
     if (formValues.dailyCalorieTarget !== '') {
@@ -129,10 +117,6 @@ const HealthGoals = () => {
       ...prev,
       goalType: mappedGoal || prev.goalType,
       activityLevel: mappedActivity || prev.activityLevel,
-      weeklyChangeLbs:
-        raw.weeklyChangeLbs === 0 || raw.weeklyChangeLbs
-          ? String(raw.weeklyChangeLbs)
-          : prev.weeklyChangeLbs,
       dailyCalorieTarget:
         cal === 0 || cal ? String(cal) : prev.dailyCalorieTarget,
     }));
@@ -141,7 +125,6 @@ const HealthGoals = () => {
   useEffect(() => {
     const snap = loadProfileSnapshot(HEALTH_GOALS_SNAPSHOT_KEY);
     if (snap && typeof snap === 'object') {
-      setSavedSummary(snap);
       const gt = goalTypeFromApi(snap.goal);
       const al = activityFromApi(snap.activity_level);
       setFormValues((prev) => ({
@@ -197,7 +180,6 @@ const HealthGoals = () => {
     setTouched({
       goalType: true,
       activityLevel: true,
-      weeklyChangeLbs: true,
       dailyCalorieTarget: true,
     });
 
@@ -215,7 +197,6 @@ const HealthGoals = () => {
 
       await setHealthGoals(payload);
       saveProfileSnapshot(HEALTH_GOALS_SNAPSHOT_KEY, payload);
-      setSavedSummary(payload);
       setSaveState({ saving: false, error: '', success: true });
     } catch (error) {
       setSaveState({ saving: false, error: getErrorMessage(error), success: false });
@@ -235,36 +216,6 @@ const HealthGoals = () => {
         </div>
 
         <div className="mt-4 h-[1px] bg-black/5" />
-
-        {savedSummary && (
-          <div className="mt-5 rounded-xl border border-brand-green/30 bg-brand-green/5 px-4 py-4 text-sm max-w-xl">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-dark/70">
-              Your saved health goals
-            </div>
-            <dl className="mt-3 space-y-2 text-brand-dark">
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-brand-dark/60">Goal</dt>
-                <dd className="font-medium">{savedSummary.goal || '—'}</dd>
-              </div>
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-brand-dark/60">Activity</dt>
-                <dd className="font-medium">{savedSummary.activity_level || '—'}</dd>
-              </div>
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="text-brand-dark/60">Calorie target</dt>
-                <dd className="font-medium">
-                  {savedSummary.calorie_target != null && savedSummary.calorie_target !== ''
-                    ? String(savedSummary.calorie_target)
-                    : 'Not set'}
-                </dd>
-              </div>
-            </dl>
-            <p className="mt-2 text-xs text-brand-dark/50">
-              Shown from your last successful save on this browser. A server GET endpoint can
-              replace this when available.
-            </p>
-          </div>
-        )}
 
         {loadState.loading ? (
           <div className="mt-6 text-sm text-brand-dark/60">
@@ -341,24 +292,6 @@ const HealthGoals = () => {
                 <p className="text-xs text-red-600">{errors.activityLevel}</p>
               )}
             </div>
-
-            {formValues.goalType !== 'maintain' && (
-              <Input
-                label="Weekly change (lbs/week)"
-                name="weeklyChangeLbs"
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min="0.1"
-                max="2"
-                placeholder="e.g. 1.0"
-                value={formValues.weeklyChangeLbs}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                error={showError('weeklyChangeLbs') ? errors.weeklyChangeLbs : undefined}
-                disabled={saveState.saving}
-              />
-            )}
 
             <Input
               label="Daily calorie target (optional)"
