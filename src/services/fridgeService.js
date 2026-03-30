@@ -10,7 +10,7 @@ const authHeaders = () => {
  */
 export const getFridgeItems = (params) =>
   request({
-    url: '/fridge/get-item',
+    url: '/api/fridge/get-item',
     method: 'GET',
     params,
     headers: authHeaders(),
@@ -21,7 +21,7 @@ export const getFridgeItems = (params) =>
  */
 export const addFridgeItem = (body) =>
   request({
-    url: '/fridge/add-item',
+    url: '/api/fridge/add-item',
     method: 'POST',
     body,
     headers: authHeaders(),
@@ -32,7 +32,7 @@ export const addFridgeItem = (body) =>
  */
 export const removeFridgeItem = (body) =>
   request({
-    url: '/fridge/remove-item',
+    url: '/api/fridge/remove-item',
     method: 'DELETE',
     body,
     headers: authHeaders(),
@@ -43,7 +43,7 @@ export const removeFridgeItem = (body) =>
  */
 export const updateFridgeItem = (body) =>
   request({
-    url: '/fridge/update-item',
+    url: '/api/fridge/update-item',
     method: 'PATCH',
     body,
     headers: authHeaders(),
