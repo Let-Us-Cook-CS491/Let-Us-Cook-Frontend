@@ -3,7 +3,7 @@ import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import {
   fetchReceiptUploadConfig,
-  submitReceiptApproval,
+  submitReceiptConfirmation,
   uploadReceiptPhoto,
 } from '../services/receiptService';
 
@@ -108,6 +108,27 @@ const formatMoney = (value, currency) => {
   }
 };
 
+const toUtcISOStringFromDateInput = (value) => {
+  if (!value) return '';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString();
+};
+
+const normalizeRequestToken = (payload) => {
+  if (!payload) return '';
+  return (
+    payload.requestToken ||
+    payload.request_token ||
+    payload.requestId ||
+    payload.request_id ||
+    payload.uploadToken ||
+    payload.upload_token ||
+    payload.token ||
+    ''
+  );
+};
+
 const normalizeUploadResponse = (payload) => {
   const data = payload?.data ?? payload ?? {};
   const rawItems =
@@ -194,6 +215,7 @@ const normalizeUploadResponse = (payload) => {
     items,
     meta,
     receiptId,
+    requestToken: normalizeRequestToken(data) || normalizeRequestToken(payload),
   };
 };
 
@@ -212,10 +234,14 @@ const ReceiptUpload = () => {
   const [uploading, setUploading] = useState(false);
   const [receiptMeta, setReceiptMeta] = useState(null);
   const [receiptId, setReceiptId] = useState('');
+  const [requestToken, setRequestToken] = useState(
+    () => localStorage.getItem('requestToken') || '',
+  );
   const [extractedItems, setExtractedItems] = useState([]);
   const [approvalError, setApprovalError] = useState('');
   const [approvalResult, setApprovalResult] = useState(null);
   const [approving, setApproving] = useState(false);
+  const [location, setLocation] = useState('pantry');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -227,6 +253,7 @@ const ReceiptUpload = () => {
         const payload = response?.data ?? response ?? {};
         const maxBytes = parseMaxBytes(payload);
         const allowedTypes = parseAllowedTypes(payload);
+        const token = normalizeRequestToken(payload);
         if (isMounted) {
           setConfigState({
             maxBytes,
@@ -234,6 +261,10 @@ const ReceiptUpload = () => {
             loading: false,
             error: '',
           });
+          if (token) {
+            setRequestToken(token);
+            localStorage.setItem('requestToken', token);
+          }
         }
       } catch (error) {
         if (isMounted) {
@@ -351,12 +382,16 @@ const ReceiptUpload = () => {
     setUploading(true);
 
     try {
-      const response = await uploadReceiptPhoto(selectedFile);
+      const response = await uploadReceiptPhoto(selectedFile, requestToken);
       const payload = response?.data ?? response ?? { status: 'Uploaded' };
       const normalized = normalizeUploadResponse(payload);
       setUploadResult(payload);
       setReceiptMeta(normalized.meta);
       setReceiptId(normalized.receiptId);
+      if (normalized.requestToken) {
+        setRequestToken(normalized.requestToken);
+        localStorage.setItem('requestToken', normalized.requestToken);
+      }
       setExtractedItems(normalized.items);
     } catch (error) {
       setApiError(getErrorMessage(error));
@@ -376,6 +411,11 @@ const ReceiptUpload = () => {
       return;
     }
 
+    if (!location) {
+      setApprovalError('Select a storage location.');
+      return;
+    }
+
     const missingExpiration = includedItems.filter((item) => !item.expiresOn);
     if (missingExpiration.length > 0) {
       setApprovalError(
@@ -388,19 +428,70 @@ const ReceiptUpload = () => {
 
     setApproving(true);
     try {
-      const payload = {
-        receiptId: receiptId || undefined,
-        items: includedItems.map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          unit: item.unit,
-          category: item.category,
-          expiresOn: item.expiresOn,
-        })),
+      const results = {
+        upsertedCount: 0,
+        upsertedItems: [],
+        failed: [],
       };
-      const response = await submitReceiptApproval(payload);
-      setApprovalResult(response?.data ?? response ?? { status: 'Saved' });
+
+      for (const item of includedItems) {
+        const quantityValue =
+          typeof item.quantity === 'string' && item.quantity.trim() !== ''
+            ? Number(item.quantity)
+            : item.quantity;
+
+        const payload = {
+          item: {
+            name: item.name,
+            quantity: Number.isFinite(quantityValue) ? quantityValue : item.quantity,
+            unit: item.unit,
+            category: item.category,
+            expiration_date: toUtcISOStringFromDateInput(item.expiresOn),
+          },
+          location: location || 'pantry',
+        };
+
+        try {
+          const response = await submitReceiptConfirmation(payload, requestToken);
+          const data = response?.data ?? response ?? {};
+          const upsertedCount =
+            data.upsertedCount ?? data.upserted_count ?? 0;
+          const upsertedItems =
+            data.upsertedItems ??
+            data.upserted_items ??
+            (data.item ? [data.item] : []);
+          const failed = data.failed ?? [];
+
+          results.upsertedCount += Number(upsertedCount) || 0;
+          if (Array.isArray(upsertedItems)) {
+            results.upsertedItems.push(...upsertedItems);
+          }
+          if (Array.isArray(failed)) {
+            results.failed.push(...failed);
+          }
+        } catch (error) {
+          results.failed.push({
+            name: item.name,
+            error: getErrorMessage(error),
+          });
+        }
+      }
+
+      const totalSaved =
+        results.upsertedCount || results.upsertedItems.length;
+      const totalFailed = results.failed.length;
+      const message =
+        totalFailed > 0
+          ? `Saved ${totalSaved} item${
+              totalSaved === 1 ? '' : 's'
+            }, ${totalFailed} failed.`
+          : `Saved ${totalSaved} item${totalSaved === 1 ? '' : 's'}.`;
+
+      setApprovalResult({
+        status: totalFailed > 0 ? 'Partial' : 'OK',
+        message,
+        data: results,
+      });
     } catch (error) {
       setApprovalError(getErrorMessage(error));
     } finally {
@@ -584,10 +675,10 @@ const ReceiptUpload = () => {
                   </div>
 
                   {hasReceiptMeta && (
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
-                        <span className="font-semibold text-brand-dark">
-                          Vendor:
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
+                      <span className="font-semibold text-brand-dark">
+                        Vendor:
                         </span>{' '}
                         {receiptMeta.vendor || 'Not provided'}
                       </div>
@@ -613,6 +704,21 @@ const ReceiptUpload = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className="mt-5 rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
+                    <label className="block text-xs font-semibold text-brand-dark">
+                      Storage location
+                    </label>
+                    <select
+                      value={location}
+                      onChange={(event) => setLocation(event.target.value)}
+                      className="mt-2 h-10 w-full rounded-lg border border-brand-khaki/60 bg-white px-3 text-sm text-brand-dark outline-none focus:border-brand-brown focus:ring-2 focus:ring-brand-khaki/40"
+                    >
+                      <option value="pantry">Pantry</option>
+                      <option value="fridge">Fridge</option>
+                      <option value="freezer">Freezer</option>
+                    </select>
+                  </div>
 
                   {extractedItems.length === 0 ? (
                     <div className="mt-6 rounded-xl border border-brand-khaki/50 bg-brand-beige/60 px-4 py-3 text-sm text-brand-dark/80">
@@ -723,6 +829,15 @@ const ReceiptUpload = () => {
                   {approvalResult && (
                     <div className="mt-4 rounded-lg border border-brand-khaki/60 bg-brand-beige/80 px-3 py-2 text-sm text-brand-dark">
                       {approvalMessage}
+                      {approvalResult?.data?.failed?.length > 0 && (
+                        <div className="mt-2 text-xs text-brand-brown">
+                          {approvalResult.data.failed.map((failure, index) => (
+                            <div key={`${failure.name || 'item'}-${index}`}>
+                              {failure.name || 'Item'}: {failure.error || 'Failed'}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
