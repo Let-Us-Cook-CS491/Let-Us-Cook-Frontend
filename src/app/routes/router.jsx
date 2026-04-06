@@ -8,10 +8,12 @@ import Dashboard from '../../pages/Dashboard';
 import MyFridge from '../../pages/MyFridge';
 import Recipes from '../../pages/Recipes';
 import MealPlan from '../../pages/MealPlan';
+import MealReminders from '../../pages/MealReminders';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
 import ReceiptUpload from '../../pages/ReceiptUpload';
 import ExpiryPriority from '../../pages/ExpiryPriority';
+import InventorySync from '../../pages/InventorySync';
 
 export const router = createBrowserRouter([
   {
@@ -47,12 +49,20 @@ export const router = createBrowserRouter([
         element: <ExpiryPriority />,
       },
       {
+        path: '/inventory-sync',
+        element: <InventorySync />,
+      },
+      {
         path: '/recipes',
         element: <Recipes />,
       },
       {
         path: '/meal-plan',
         element: <MealPlan />,
+      },
+      {
+        path: '/meal-reminders',
+        element: <MealReminders />,
       },
       {
         path: '/groceries',
