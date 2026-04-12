@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import Button from '../components/ui/Button';
+import clsx from 'clsx';
 import { setDietPreferences } from '../services/dietPreferencesService';
 import { loadProfileSnapshot, saveProfileSnapshot } from '../utils/profileStorage';
 
@@ -31,6 +31,33 @@ const getErrorMessage = (error) => {
 
 const SNAPSHOT_KEY = 'dietPreferences';
 
+const labelStyle =
+  'text-[11px] font-bold uppercase italic tracking-[0.14em] text-[#a0a0a0]';
+
+const headingStyle =
+  'text-base font-bold uppercase italic tracking-wide text-[#231F20]';
+
+const Toggle = ({ checked, onChange, disabled }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className={clsx(
+      'relative h-7 w-[52px] shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4F5D48]/50 disabled:opacity-50',
+      checked ? 'bg-[#4F5D48]' : 'bg-[#d4d4d0]',
+    )}
+  >
+    <span
+      className={clsx(
+        'absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow-md transition-transform duration-200 ease-out',
+        checked && 'translate-x-[22px]',
+      )}
+    />
+  </button>
+);
+
 const DietPreferences = () => {
   const [currentDiet, setCurrentDiet] = useState('Everything');
   const [restrictions, setRestrictions] = useState([]);
@@ -38,6 +65,7 @@ const DietPreferences = () => {
     kitchen_briefing: true,
     waste_prevention: true,
   });
+  const [showAddRestriction, setShowAddRestriction] = useState(false);
   const [touched, setTouched] = useState(false);
   const [saveState, setSaveState] = useState({
     saving: false,
@@ -74,11 +102,17 @@ const DietPreferences = () => {
     return '';
   }, [currentDiet]);
 
-  const toggleRestriction = (value) => {
-    setRestrictions((prev) =>
-      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
-    );
+  const availableToAdd = restrictionOptions.filter((r) => !restrictions.includes(r));
+
+  const removeRestriction = (value) => {
+    setRestrictions((prev) => prev.filter((item) => item !== value));
     setSaveState((prev) => ({ ...prev, success: '', error: '' }));
+  };
+
+  const addRestriction = (value) => {
+    setRestrictions((prev) => [...prev, value]);
+    setSaveState((prev) => ({ ...prev, success: '', error: '' }));
+    if (availableToAdd.length <= 1) setShowAddRestriction(false);
   };
 
   const toggleAlert = (key) => {
@@ -106,15 +140,16 @@ const DietPreferences = () => {
 
       const result = await setDietPreferences(payload);
       const fromApi = result?.data;
-      const snapshot = fromApi && typeof fromApi === 'object'
-        ? {
-            current_diet: fromApi.current_diet ?? payload.current_diet,
-            restrictions: Array.isArray(fromApi.restrictions)
-              ? fromApi.restrictions
-              : payload.restrictions,
-            smart_alerts: fromApi.smart_alerts ?? payload.smart_alerts,
-          }
-        : payload;
+      const snapshot =
+        fromApi && typeof fromApi === 'object'
+          ? {
+              current_diet: fromApi.current_diet ?? payload.current_diet,
+              restrictions: Array.isArray(fromApi.restrictions)
+                ? fromApi.restrictions
+                : payload.restrictions,
+              smart_alerts: fromApi.smart_alerts ?? payload.smart_alerts,
+            }
+          : payload;
 
       saveProfileSnapshot(SNAPSHOT_KEY, snapshot);
       setSaveState({
@@ -132,29 +167,44 @@ const DietPreferences = () => {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-black/5 px-6 py-6">
-      <h3 className="text-xl font-semibold text-brand-dark">Dietary Pattern</h3>
-      <p className="mt-1 text-sm text-brand-dark/60 uppercase tracking-[0.12em]">
-        Tailor recommendations based on your habits
-      </p>
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {saveState.error && (
+        <div className="rounded-[28px] border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+          {saveState.error}
+        </div>
+      )}
+      {saveState.success && (
+        <div className="rounded-[28px] border border-green-200 bg-green-50 px-5 py-3 text-sm text-green-800">
+          {saveState.success}
+        </div>
+      )}
 
-      <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
-        {saveState.error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {saveState.error}
+      {/* Dietary Pattern card */}
+      <div className="rounded-[40px] border border-black/[0.06] bg-white px-8 py-8 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+        <header className="flex items-start gap-3">
+          <svg
+            className="mt-0.5 h-8 w-8 shrink-0 text-red-500"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+          <div>
+            <h3 className={`${headingStyle} text-lg md:text-xl`}>Dietary pattern</h3>
+            <p className="mt-2 max-w-xl text-[10px] font-medium uppercase italic leading-relaxed tracking-[0.12em] text-[#a0a0a0] md:text-[11px]">
+              Tailor your recipe recommendations based on your habits.
+            </p>
           </div>
-        )}
-        {saveState.success && (
-          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            {saveState.success}
-          </div>
-        )}
+        </header>
 
-        <section>
-          <h4 className="text-xs uppercase tracking-[0.16em] text-brand-dark/60 font-semibold">
-            Current Diet
-          </h4>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        <section className="mt-8">
+          <h4 className={labelStyle}>Current diet</h4>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {dietOptions.map((option) => {
               const isSelected = currentDiet === option;
 
@@ -166,12 +216,12 @@ const DietPreferences = () => {
                     setCurrentDiet(option);
                     setSaveState((prev) => ({ ...prev, success: '', error: '' }));
                   }}
-                  className={[
-                    'rounded-xl border px-4 py-3 text-sm font-semibold transition-colors',
+                  className={clsx(
+                    'rounded-2xl px-4 py-4 text-center text-xs font-bold uppercase italic transition-colors md:text-sm',
                     isSelected
-                      ? 'border-brand-green bg-brand-green/10 text-brand-dark'
-                      : 'border-black/10 bg-[#F7F7F2] text-brand-dark/80 hover:border-brand-green/50',
-                  ].join(' ')}
+                      ? 'border-2 border-[#4a634e] bg-white text-[#4a634e] shadow-sm'
+                      : 'border border-transparent bg-[#EFEFED] text-[#a0a0a0] hover:bg-[#e8e8e6]',
+                  )}
                 >
                   {option}
                 </button>
@@ -179,83 +229,124 @@ const DietPreferences = () => {
             })}
           </div>
           {touched && validationError && (
-            <p className="mt-2 text-xs text-red-600">{validationError}</p>
+            <p className="mt-3 text-xs italic text-red-600">{validationError}</p>
           )}
         </section>
 
-        <section>
-          <h4 className="text-xs uppercase tracking-[0.16em] text-brand-dark/60 font-semibold">
-            Restrictions
-          </h4>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {restrictionOptions.map((option) => {
-              const selected = restrictions.includes(option);
-
-              return (
+        <section className="mt-10">
+          <h4 className={labelStyle}>Restrictions</h4>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {restrictions.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-2 rounded-full bg-[#262322] py-2 pl-4 pr-3 text-[11px] font-bold uppercase italic text-white"
+              >
+                {tag}
                 <button
-                  key={option}
                   type="button"
-                  onClick={() => toggleRestriction(option)}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                    selected
-                      ? 'border-brand-dark bg-brand-dark text-brand-beige'
-                      : 'border-black/10 bg-white text-brand-dark/80 hover:bg-black/5',
-                  ].join(' ')}
+                  onClick={() => removeRestriction(tag)}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-[#c8c8c8] hover:bg-white/10 hover:text-white"
+                  aria-label={`Remove ${tag}`}
                 >
-                  {option}
+                  ×
                 </button>
-              );
-            })}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowAddRestriction((v) => !v)}
+              className={clsx(
+                'inline-flex items-center gap-2 rounded-full border-2 border-dashed border-[#b8bcc4] bg-white px-4 py-2 text-[11px] font-bold uppercase italic text-[#a0a0a0] transition-colors hover:border-[#a0a0a0]',
+                showAddRestriction && 'border-[#4a634e] text-[#4a634e]',
+              )}
+            >
+              <span className="text-base leading-none">+</span>
+              Add new
+            </button>
           </div>
+          {showAddRestriction && availableToAdd.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2 rounded-2xl bg-[#F5F5F3] p-3">
+              {availableToAdd.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => addRestriction(opt)}
+                  className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[10px] font-bold uppercase italic text-[#6a6a6a] hover:border-[#4a634e] hover:text-[#4a634e]"
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
+      </div>
 
-        <section>
-          <h4 className="text-xs uppercase tracking-[0.16em] text-brand-dark/60 font-semibold">
-            Smart Alerts
-          </h4>
-          <div className="mt-3 space-y-3">
-            <label className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3">
-              <div>
-                <div className="text-sm font-medium text-brand-dark">Kitchen Briefing</div>
-                <div className="text-xs text-brand-dark/60">
-                  Get a short daily kitchen summary.
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={smartAlerts.kitchen_briefing}
-                onChange={() => toggleAlert('kitchen_briefing')}
-                className="h-4 w-4 accent-brand-green"
-              />
-            </label>
+      {/* Smart Alerts card */}
+      <div className="rounded-[40px] border border-black/[0.06] bg-white px-8 py-8 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+        <header className="flex items-center gap-3 border-b border-black/[0.06] pb-5">
+          <svg
+            className="h-7 w-7 shrink-0 text-[#231F20]"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <h3 className={`${headingStyle}`}>Smart alerts</h3>
+        </header>
 
-            <label className="flex items-center justify-between rounded-xl border border-black/10 px-4 py-3">
-              <div>
-                <div className="text-sm font-medium text-brand-dark">Waste Prevention</div>
-                <div className="text-xs text-brand-dark/60">
-                  Alerts for ingredients you should use soon.
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={smartAlerts.waste_prevention}
-                onChange={() => toggleAlert('waste_prevention')}
-                className="h-4 w-4 accent-brand-green"
-              />
-            </label>
+        <div className="mt-6 space-y-4">
+          <div className="flex items-center gap-4 rounded-3xl bg-[#F5F5F3] px-5 py-5">
+            <div className="min-w-0 flex-1">
+              <div className={`${headingStyle} text-sm`}>Waste prevention</div>
+              <p className="mt-2 text-[9px] font-medium uppercase italic leading-relaxed tracking-[0.1em] text-[#a0a0a0] md:text-[10px]">
+                Notifications before items in your fridge go to waste.
+              </p>
+            </div>
+            <Toggle
+              checked={smartAlerts.waste_prevention}
+              onChange={(v) => {
+                setSmartAlerts((p) => ({ ...p, waste_prevention: v }));
+                setSaveState((prev) => ({ ...prev, success: '', error: '' }));
+              }}
+              disabled={saveState.saving}
+            />
           </div>
-        </section>
 
-        <div className="pt-2">
-          <Button type="submit" disabled={saveState.saving}>
-            {saveState.saving ? 'Saving...' : 'Save Preferences'}
-          </Button>
+          <div className="flex items-center gap-4 rounded-3xl bg-[#F5F5F3] px-5 py-5">
+            <div className="min-w-0 flex-1">
+              <div className={`${headingStyle} text-sm`}>Kitchen briefing</div>
+              <p className="mt-2 text-[9px] font-medium uppercase italic leading-relaxed tracking-[0.1em] text-[#a0a0a0] md:text-[10px]">
+                Daily smart suggestions for your scheduled meals.
+              </p>
+            </div>
+            <Toggle
+              checked={smartAlerts.kitchen_briefing}
+              onChange={(v) => {
+                setSmartAlerts((p) => ({ ...p, kitchen_briefing: v }));
+                setSaveState((prev) => ({ ...prev, success: '', error: '' }));
+              }}
+              disabled={saveState.saving}
+            />
+          </div>
         </div>
-      </form>
-    </div>
+
+        <button
+          type="submit"
+          disabled={saveState.saving}
+          className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-[#231F20] py-4 text-xs font-bold uppercase italic tracking-[0.12em] text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50 md:text-sm"
+        >
+          {saveState.saving ? 'Saving...' : 'Apply all preferences'}
+          {!saveState.saving && <span aria-hidden className="text-base">›</span>}
+        </button>
+      </div>
+    </form>
   );
 };
 
 export default DietPreferences;
-
