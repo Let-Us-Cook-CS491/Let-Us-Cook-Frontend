@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AuthLayout from '../layouts/AuthLayout';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Landing from '../../pages/Landing';
@@ -12,7 +12,6 @@ import MealReminders from '../../pages/MealReminders';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
 import ReceiptUpload from '../../pages/ReceiptUpload';
-import ExpiryPriority from '../../pages/ExpiryPriority';
 import InventorySync from '../../pages/InventorySync';
 
 export const router = createBrowserRouter([
@@ -46,7 +45,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/expiry/priority',
-        element: <ExpiryPriority />,
+        element: <Navigate to="/my-fridge?view=expiry" replace />,
       },
       {
         path: '/inventory-sync',

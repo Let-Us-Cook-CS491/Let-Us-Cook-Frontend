@@ -7,9 +7,8 @@ const Profile = () => {
 
   const sections = [
     { id: 'preferences', label: 'Preferences' },
-    { id: 'notifications', label: 'Notifications' },
     { id: 'health-goals', label: 'Health Goals' },
-    { id: 'security', label: 'Security' },
+    { id: 'notifications', label: 'Notifications' },
     { id: 'settings', label: 'Settings' },
   ];
 

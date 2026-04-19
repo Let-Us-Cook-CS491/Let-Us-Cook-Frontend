@@ -5,7 +5,6 @@ import { logout } from '../../services/authService';
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/my-fridge', label: 'My Fridge' },
-  { to: '/expiry/priority', label: 'Expiry Priority' },
   { to: '/inventory-sync', label: 'Inventory Sync' },
   { to: '/recipes', label: 'Recipes' },
   { to: '/meal-plan', label: 'Meal Plan' },

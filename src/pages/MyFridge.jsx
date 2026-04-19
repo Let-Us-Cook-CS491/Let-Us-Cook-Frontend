@@ -1,5 +1,10 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom';
 import {
   Camera,
   Plus,
@@ -13,6 +18,8 @@ import IngredientCard, {
   daysUntil,
   EXPIRING_SOON_DAYS,
 } from '../components/fridge/IngredientCard';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 import IngredientFormModal from '../components/fridge/IngredientFormModal';
 import ConfirmDeleteDialog from '../components/fridge/ConfirmDeleteDialog';
 import {
@@ -27,6 +34,16 @@ const GRID_COLS = 4;
 const GRID_ROWS = 4;
 const SLOT_COUNT = GRID_COLS * GRID_ROWS;
 
+const DEFAULT_EXPIRY_WINDOW = 3;
+const MIN_EXPIRY_WINDOW = 1;
+const MAX_EXPIRY_WINDOW = 30;
+
+const toNumber = (value) => {
+  if (value === '' || value === null || value === undefined) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
 async function fetchFridgeList() {
   const res = await getFridgeItems({ limit: 200 });
   if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
@@ -37,9 +54,29 @@ async function fetchFridgeList() {
   return res.data.map(mapFridgeDocToUi).filter(Boolean);
 }
 
+async function fetchExpiryList(days) {
+  const res = await getFridgeItems({ expiringInDays: days });
+  if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
+    const msg = res?.message || 'Failed to load expiring items';
+    throw new Error(msg);
+  }
+  return res.data.map(mapFridgeDocToUi).filter(Boolean);
+}
+
 const MyFridge = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fridgeView = searchParams.get('view') === 'expiry' ? 'expiry' : 'all';
+
+  const setFridgeView = (view) => {
+    if (view === 'expiry') {
+      setSearchParams({ view: 'expiry' }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
+
   const [receiptSavedDismissed, setReceiptSavedDismissed] = useState(false);
   const showReceiptSaved =
     Boolean(location.state?.receiptItemsSaved) && !receiptSavedDismissed;
@@ -47,6 +84,17 @@ const MyFridge = () => {
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+
+  const [expiryItems, setExpiryItems] = useState([]);
+  const [expiryLoading, setExpiryLoading] = useState(false);
+  const [expiryError, setExpiryError] = useState('');
+  const [expiringWindowDays, setExpiringWindowDays] = useState(
+    String(DEFAULT_EXPIRY_WINDOW),
+  );
+  const [appliedExpiryDays, setAppliedExpiryDays] = useState(
+    DEFAULT_EXPIRY_WINDOW,
+  );
+  const [windowTouched, setWindowTouched] = useState(false);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -57,10 +105,64 @@ const MyFridge = () => {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const windowValidationError = useMemo(() => {
+    const days = toNumber(expiringWindowDays);
+    if (days === null) return 'Enter the number of days to check.';
+    if (!Number.isInteger(days)) return 'Use a whole number of days.';
+    if (days < MIN_EXPIRY_WINDOW || days > MAX_EXPIRY_WINDOW) {
+      return `Use ${MIN_EXPIRY_WINDOW} to ${MAX_EXPIRY_WINDOW} days.`;
+    }
+    return '';
+  }, [expiringWindowDays]);
+
   const refetch = useCallback(async () => {
     const list = await fetchFridgeList();
     setIngredients(list);
-  }, []);
+    if (fridgeView === 'expiry') {
+      try {
+        const exp = await fetchExpiryList(appliedExpiryDays);
+        setExpiryItems(exp);
+        setExpiryError('');
+      } catch (e) {
+        setExpiryItems([]);
+        setExpiryError(e?.message || 'Could not refresh expiring items.');
+      }
+    }
+  }, [fridgeView, appliedExpiryDays]);
+
+  useEffect(() => {
+    if (fridgeView !== 'expiry') return;
+    if (!localStorage.getItem('accessToken')) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      setExpiryLoading(true);
+      setExpiryError('');
+      try {
+        const list = await fetchExpiryList(appliedExpiryDays);
+        if (!cancelled) setExpiryItems(list);
+      } catch (e) {
+        if (!cancelled) {
+          setExpiryError(e?.message || 'Could not load expiring items.');
+          setExpiryItems([]);
+        }
+      } finally {
+        if (!cancelled) setExpiryLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [fridgeView, appliedExpiryDays]);
+
+  useEffect(() => {
+    if (fridgeView !== 'expiry') return;
+    setExpiringWindowDays(String(appliedExpiryDays));
+    setWindowTouched(false);
+  }, [fridgeView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +213,24 @@ const MyFridge = () => {
     list.sort((a, b) => daysUntil(a.expiresOn) - daysUntil(b.expiresOn));
     return list;
   }, [ingredients, search, categoryFilter]);
+
+  const filteredExpiry = useMemo(() => {
+    let list = [...expiryItems];
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (i) =>
+          i.name.toLowerCase().includes(q) ||
+          i.category.toLowerCase().includes(q) ||
+          (i.location && i.location.toLowerCase().includes(q)),
+      );
+    }
+    if (categoryFilter !== 'all') {
+      list = list.filter((i) => i.category === categoryFilter);
+    }
+    list.sort((a, b) => daysUntil(a.expiresOn) - daysUntil(b.expiresOn));
+    return list;
+  }, [expiryItems, search, categoryFilter]);
 
   const visibleIngredients = filteredSorted.slice(0, SLOT_COUNT);
   const hiddenCount = Math.max(filteredSorted.length - SLOT_COUNT, 0);
@@ -166,6 +286,15 @@ const MyFridge = () => {
     });
     await refetch();
   }, [deleteTarget, refetch]);
+
+  const handleApplyExpiryWindow = (event) => {
+    event.preventDefault();
+    setWindowTouched(true);
+    if (windowValidationError) return;
+    const days = toNumber(expiringWindowDays);
+    if (days === null) return;
+    setAppliedExpiryDays(days);
+  };
 
   const slots = useMemo(() => {
     const cells = [];
@@ -265,6 +394,38 @@ const MyFridge = () => {
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-brand-dark/45 sm:text-xs">
                 Manage your ingredients and track expiration dates.
               </p>
+              <div
+                className="mt-4 inline-flex rounded-full border border-black/10 bg-[#F7F7F2] p-1"
+                role="tablist"
+                aria-label="Fridge view"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={fridgeView === 'all'}
+                  onClick={() => setFridgeView('all')}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors sm:text-sm ${
+                    fridgeView === 'all'
+                      ? 'bg-white text-brand-dark shadow-sm'
+                      : 'text-brand-dark/55 hover:text-brand-dark'
+                  }`}
+                >
+                  All items
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={fridgeView === 'expiry'}
+                  onClick={() => setFridgeView('expiry')}
+                  className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-wide transition-colors sm:text-sm ${
+                    fridgeView === 'expiry'
+                      ? 'bg-white text-brand-dark shadow-sm'
+                      : 'text-brand-dark/55 hover:text-brand-dark'
+                  }`}
+                >
+                  Expiry priority
+                </button>
+              </div>
             </div>
             <div className="flex w-full shrink-0 flex-row flex-wrap items-center justify-end gap-2 sm:w-auto sm:justify-end">
               <Link
@@ -316,7 +477,60 @@ const MyFridge = () => {
             </div>
           </div>
 
-          {hiddenCount > 0 && (
+          {fridgeView === 'expiry' && (
+            <>
+              <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-black/5 bg-[#F7F7F2]/60 p-4 sm:flex-row sm:items-end sm:justify-between">
+                <form
+                  onSubmit={handleApplyExpiryWindow}
+                  className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
+                >
+                  <div className="min-w-[200px] flex-1">
+                    <label
+                      htmlFor="expiry-window-days"
+                      className="block text-xs font-semibold uppercase tracking-wide text-brand-dark/55"
+                    >
+                      Expiring in the next (days)
+                    </label>
+                    <Input
+                      id="expiry-window-days"
+                      type="number"
+                      min={MIN_EXPIRY_WINDOW}
+                      max={MAX_EXPIRY_WINDOW}
+                      step={1}
+                      value={expiringWindowDays}
+                      onChange={(e) => setExpiringWindowDays(e.target.value)}
+                      disabled={!isAuthed}
+                      className="mt-1.5"
+                    />
+                    {windowTouched && windowValidationError && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {windowValidationError}
+                      </p>
+                    )}
+                  </div>
+                  <Button type="submit" disabled={!isAuthed}>
+                    Apply window
+                  </Button>
+                </form>
+                <div className="text-left sm:text-right">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-dark/50">
+                    Active window
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-brand-dark">
+                    {appliedExpiryDays} days
+                  </div>
+                </div>
+              </div>
+
+              {expiryError && (
+                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+                  {expiryError}
+                </div>
+              )}
+            </>
+          )}
+
+          {fridgeView === 'all' && hiddenCount > 0 && (
             <p className="mt-3 text-xs text-amber-800">
               Showing first {SLOT_COUNT} of {filteredSorted.length} matching
               items. Narrow your search or remove items to see the rest in this
@@ -325,36 +539,66 @@ const MyFridge = () => {
           )}
 
           <div className="relative mt-4 min-h-0 flex-1 overflow-x-auto overflow-y-auto pb-1">
-            {loading && (
+            {((fridgeView === 'all' && loading) ||
+              (fridgeView === 'expiry' && (loading || expiryLoading))) && (
               <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70">
                 <Loader2 className="h-10 w-10 animate-spin text-brand-green" />
               </div>
             )}
-            <div className="grid w-full min-w-[480px] grid-cols-4 gap-3 sm:gap-4 md:min-w-0">
-              {slots.map((item, index) =>
-                item ? (
-                  <IngredientCard
-                    key={item.id}
-                    item={item}
-                    onEdit={openEdit}
-                    onRemove={setDeleteTarget}
-                  />
-                ) : (
-                  <button
-                    key={`empty-${index}`}
-                    type="button"
-                    onClick={openAdd}
-                    disabled={!isAuthed || loading}
-                    className="flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[188px]"
-                  >
-                    <Plus className="h-8 w-8" strokeWidth={1.75} />
-                    <span className="text-[10px] font-semibold uppercase tracking-wide">
-                      Add
-                    </span>
-                  </button>
-                ),
-              )}
-            </div>
+            {fridgeView === 'all' ? (
+              <div className="grid w-full min-w-[480px] grid-cols-4 gap-3 sm:gap-4 md:min-w-0">
+                {slots.map((item, index) =>
+                  item ? (
+                    <IngredientCard
+                      key={item.id}
+                      item={item}
+                      onEdit={openEdit}
+                      onRemove={setDeleteTarget}
+                    />
+                  ) : (
+                    <button
+                      key={`empty-${index}`}
+                      type="button"
+                      onClick={openAdd}
+                      disabled={!isAuthed || loading}
+                      className="flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[188px]"
+                    >
+                      <Plus className="h-8 w-8" strokeWidth={1.75} />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide">
+                        Add
+                      </span>
+                    </button>
+                  ),
+                )}
+              </div>
+            ) : (
+              <>
+                {isAuthed &&
+                  !expiryLoading &&
+                  !loading &&
+                  !expiryError &&
+                  filteredExpiry.length === 0 && (
+                    <div className="rounded-2xl border border-black/5 bg-[#F7F7F2]/80 px-4 py-10 text-center text-sm text-brand-dark/65">
+                      No items expiring in the next {appliedExpiryDays} days
+                      {search.trim() || categoryFilter !== 'all'
+                        ? ' matching your filters.'
+                        : '.'}
+                    </div>
+                  )}
+                {filteredExpiry.length > 0 && (
+                  <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+                    {filteredExpiry.map((item) => (
+                      <IngredientCard
+                        key={item.id}
+                        item={item}
+                        onEdit={openEdit}
+                        onRemove={setDeleteTarget}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
