@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Camera,
   Plus,
@@ -38,6 +38,12 @@ async function fetchFridgeList() {
 }
 
 const MyFridge = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [receiptSavedDismissed, setReceiptSavedDismissed] = useState(false);
+  const showReceiptSaved =
+    Boolean(location.state?.receiptItemsSaved) && !receiptSavedDismissed;
+
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -179,6 +185,23 @@ const MyFridge = () => {
 
   return (
     <div className="h-full min-h-0">
+      {showReceiptSaved && (
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-brand-green/30 bg-brand-green/10 px-4 py-3 text-sm text-brand-dark">
+          <p className="font-medium">
+            Receipt items saved — your fridge list is updated below.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setReceiptSavedDismissed(true);
+              navigate(location.pathname, { replace: true, state: {} });
+            }}
+            className="shrink-0 text-xs font-semibold uppercase tracking-wide text-brand-dark/70 underline hover:text-brand-dark"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       {loadError && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {loadError}{' '}

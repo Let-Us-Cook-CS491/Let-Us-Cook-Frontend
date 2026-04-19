@@ -60,19 +60,9 @@ const AuthPage = ({ initialTab = 'signin' }) => {
           </p>
         </div>
 
-        <div className="relative w-full max-w-sm overflow-hidden">
-          <div
-            className={`flex w-[200%] transition-transform duration-300 ease-out ${
-              isSignIn ? 'translate-x-0' : '-translate-x-1/2'
-            }`}
-          >
-            <div className="w-1/2 flex-shrink-0 pr-3">
-              <SignInForm />
-            </div>
-
-            <div className="w-1/2 flex-shrink-0 pl-3">
-              <SignUpForm />
-            </div>
+        <div className="w-full max-w-sm">
+          <div key={activeTab} className="animate-auth-fade-in w-full">
+            {isSignIn ? <SignInForm /> : <SignUpForm />}
           </div>
         </div>
 

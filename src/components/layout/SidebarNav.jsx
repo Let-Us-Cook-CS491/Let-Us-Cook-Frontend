@@ -43,9 +43,18 @@ const SidebarNav = () => {
   return (
     <aside className="w-64 bg-white border-r border-black/5 flex flex-col">
       <div className="px-6 py-6 border-b border-black/5">
-        <span className="block text-lg font-semibold text-brand-dark">
-          Let Us Cook
-        </span>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/assets/let-us-cook-pan.png"
+            alt=""
+            className="h-9 w-9 flex-shrink-0 rounded-lg object-contain ring-1 ring-black/10"
+            width={36}
+            height={36}
+          />
+          <span className="block text-lg font-semibold text-brand-dark">
+            Let Us Cook
+          </span>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">

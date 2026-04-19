@@ -2,24 +2,6 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 
-const IconWrap = ({ children }) => (
-  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-md">
-    {children}
-  </div>
-);
-
-const UtensilsIcon = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="none">
-    <path
-      d="M4 3V8.5C4 10.43 5.57 12 7.5 12V21M8 3V8M11 3V8M17 3L20 6L16 10L13 7L17 3ZM13 7L21 15"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
 const ChevronRightIcon = () => (
   <svg viewBox="0 0 24 24" className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none">
     <path
@@ -60,9 +42,13 @@ const Landing = () => {
     <div className="min-h-screen bg-[#567257] text-white flex flex-col">
       <nav className="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between gap-6">
         <div className="flex items-center gap-2">
-          <IconWrap>
-            <UtensilsIcon />
-          </IconWrap>
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/25 ring-1 ring-white/20 backdrop-blur-sm">
+            <img
+              src="/assets/let-us-cook-pan.png"
+              alt=""
+              className="max-h-full max-w-full object-contain object-center"
+            />
+          </div>
           <span className="text-xl md:text-2xl font-black tracking-tighter uppercase italic">
             Let Us Cook
           </span>
@@ -156,7 +142,7 @@ const Landing = () => {
       </section>
 
       <footer className="border-t border-white/5 py-12 text-center text-white/30 text-xs font-bold uppercase tracking-[0.3em]">
-        &copy; 2026 Let Us Cook • All Rights Reserved
+        &copy; 2026 Let Us Cook ï¿½ All Rights Reserved
       </footer>
     </div>
   );
