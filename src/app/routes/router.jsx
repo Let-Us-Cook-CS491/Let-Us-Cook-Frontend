@@ -8,11 +8,9 @@ import Dashboard from '../../pages/Dashboard';
 import MyFridge from '../../pages/MyFridge';
 import Recipes from '../../pages/Recipes';
 import MealPlan from '../../pages/MealPlan';
-import MealReminders from '../../pages/MealReminders';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
 import ReceiptUpload from '../../pages/ReceiptUpload';
-import InventorySync from '../../pages/InventorySync';
 
 export const router = createBrowserRouter([
   {
@@ -49,7 +47,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/inventory-sync',
-        element: <InventorySync />,
+        element: <Navigate to="/dashboard" replace />,
       },
       {
         path: '/recipes',
@@ -61,7 +59,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/meal-reminders',
-        element: <MealReminders />,
+        element: <Navigate to="/dashboard" replace />,
       },
       {
         path: '/groceries',
