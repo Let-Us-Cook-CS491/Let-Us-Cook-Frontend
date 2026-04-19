@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { X, Bell, CheckCheck, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Bell, CheckCheck } from 'lucide-react';
 import {
-  fetchInboxNotifications,
+  fetchNotificationsPage,
   markNotificationRead,
-  deleteNotification,
   markAllNotificationsRead,
 } from '../../services/notificationService';
+import { resolveNotificationTarget } from '../../constants/notificationPages';
 
 function formatRelative(iso) {
   if (!iso) return '';
@@ -23,29 +24,54 @@ function formatRelative(iso) {
 }
 
 export default function NotificationInbox({ isOpen, onClose, onUnreadInvalidate }) {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [markingAll, setMarkingAll] = useState(false);
 
-  const load = useCallback(async () => {
+  const loadFirstPage = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const list = await fetchInboxNotifications();
-      setItems(list);
+      const { items: rows, nextCursor: cursor } = await fetchNotificationsPage({
+        limit: 50,
+      });
+      setItems(rows);
+      setNextCursor(cursor);
     } catch (e) {
       setError(e?.message || 'Could not load notifications.');
       setItems([]);
+      setNextCursor(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (isOpen) load();
-  }, [isOpen, load]);
+    if (isOpen) loadFirstPage();
+  }, [isOpen, loadFirstPage]);
+
+  const handleLoadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError('');
+    try {
+      const { items: more, nextCursor: cursor } = await fetchNotificationsPage({
+        limit: 50,
+        beforeId: nextCursor,
+      });
+      setItems((prev) => [...prev, ...more]);
+      setNextCursor(cursor);
+    } catch (e) {
+      setError(e?.message || 'Could not load more.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -62,20 +88,11 @@ export default function NotificationInbox({ isOpen, onClose, onUnreadInvalidate 
       await markNotificationRead(id);
       setItems((prev) =>
         prev.map((n) =>
-          n.id === id ? { ...n, read: true, read_at: new Date().toISOString() } : n,
+          n.id === id
+            ? { ...n, read: true, read_at: n.read_at || new Date().toISOString() }
+            : n,
         ),
       );
-      onUnreadInvalidate?.();
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    setBusyId(id);
-    try {
-      await deleteNotification(id);
-      setItems((prev) => prev.filter((n) => n.id !== id));
       onUnreadInvalidate?.();
     } finally {
       setBusyId(null);
@@ -86,16 +103,20 @@ export default function NotificationInbox({ isOpen, onClose, onUnreadInvalidate 
     setMarkingAll(true);
     try {
       await markAllNotificationsRead();
-      setItems((prev) =>
-        prev.map((n) =>
-          n.read ? n : { ...n, read: true, read_at: new Date().toISOString() },
-        ),
-      );
+      await loadFirstPage();
       onUnreadInvalidate?.();
     } catch (e) {
       setError(e?.message || 'Could not mark all as read.');
     } finally {
       setMarkingAll(false);
+    }
+  };
+
+  const openTarget = (page) => {
+    const path = resolveNotificationTarget(page);
+    if (path) {
+      navigate(path);
+      onClose();
     }
   };
 
@@ -127,7 +148,7 @@ export default function NotificationInbox({ isOpen, onClose, onUnreadInvalidate 
               Notifications
             </h2>
             <p className="mt-0.5 text-xs text-brand-dark/55">
-              Frontend preview — data is stored locally until the API is connected.
+              Fridge, recipes, profile — tap Open when a link is available.
             </p>
           </div>
           <button
@@ -168,52 +189,72 @@ export default function NotificationInbox({ isOpen, onClose, onUnreadInvalidate 
           )}
           {!loading &&
             !error &&
-            items.map((n) => (
-              <article
-                key={n.id}
-                className={`mb-2 rounded-xl border px-4 py-3 transition-colors ${
-                  n.read
-                    ? 'border-black/5 bg-white/80'
-                    : 'border-brand-green/25 bg-brand-green/10'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      {!n.read && (
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-brand-green" title="Unread" />
+            items.map((n) => {
+              const target = n.page ? resolveNotificationTarget(n.page) : null;
+              return (
+                <article
+                  key={n.id}
+                  className={`mb-2 rounded-xl border px-4 py-3 transition-colors ${
+                    n.read
+                      ? 'border-black/5 bg-white/80'
+                      : 'border-brand-green/25 bg-brand-green/10'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        {!n.read && (
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full bg-brand-green"
+                            title="Unread"
+                          />
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm leading-relaxed text-brand-dark/85">
+                        {n.message}
+                      </p>
+                      <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-brand-dark/40">
+                        {formatRelative(n.created_at)}
+                      </p>
+                      {target && (
+                        <button
+                          type="button"
+                          onClick={() => openTarget(n.page)}
+                          className="mt-2 text-xs font-semibold text-brand-green underline hover:no-underline"
+                        >
+                          Open
+                        </button>
                       )}
-                      <h3 className="text-sm font-semibold text-brand-dark">{n.title}</h3>
                     </div>
-                    <p className="mt-1 text-xs leading-relaxed text-brand-dark/70">{n.body}</p>
-                    <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-brand-dark/40">
-                      {formatRelative(n.created_at)}
-                    </p>
+                    <div className="flex shrink-0 flex-col gap-1">
+                      {!n.read && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkRead(n.id)}
+                          disabled={busyId === n.id}
+                          className="rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-green hover:bg-brand-green/15 disabled:opacity-50"
+                        >
+                          Read
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 flex-col gap-1">
-                    {!n.read && (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkRead(n.id)}
-                        disabled={busyId === n.id}
-                        className="rounded-lg px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-brand-green hover:bg-brand-green/15 disabled:opacity-50"
-                      >
-                        Read
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(n.id)}
-                      disabled={busyId === n.id}
-                      className="rounded-lg p-1.5 text-brand-dark/40 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                      aria-label="Delete notification"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
+
+          {!loading && !error && nextCursor && (
+            <div className="px-2 py-4 text-center">
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="text-xs font-semibold uppercase tracking-wide text-brand-green hover:underline disabled:opacity-50"
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       </aside>
     </>
