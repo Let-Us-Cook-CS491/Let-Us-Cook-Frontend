@@ -615,7 +615,11 @@ const Recipes = () => {
               }`}
             >
               {browseList.map((r) => {
-                const ingCount = Array.isArray(r.ingredients) ? r.ingredients.length : 0;
+                const ingCount = Array.isArray(r.recipeIngredients)
+                  ? r.recipeIngredients.length
+                  : Array.isArray(r.ingredients)
+                    ? r.ingredients.length
+                    : 0;
                 const thumb = r.image_url || '';
                 const key = r._id != null ? String(r._id) : r.title;
                 return (

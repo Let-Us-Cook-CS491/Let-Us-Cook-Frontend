@@ -33,6 +33,46 @@ function ingredientFridgeStatus(name, matched, missing) {
   return 'neutral';
 }
 
+/** MealDB nested totals or flat Mongo nutrition (browse catalog). */
+function nutritionTotalsFrom(nutrition) {
+  if (!nutrition || typeof nutrition !== 'object') return null;
+  const t = nutrition.totals;
+  if (
+    t &&
+    typeof t === 'object' &&
+    (t.calories_kcal != null ||
+      t.protein_g != null ||
+      t.carbohydrates_g != null ||
+      t.fat_g != null)
+  ) {
+    return t;
+  }
+  if (
+    nutrition.calories_kcal != null ||
+    nutrition.calories != null ||
+    nutrition.protein_g != null ||
+    nutrition.protein != null ||
+    nutrition.carbohydrates_g != null ||
+    nutrition.carbs != null ||
+    nutrition.fat_g != null ||
+    nutrition.fat != null
+  ) {
+    return {
+      calories_kcal: nutrition.calories_kcal ?? nutrition.calories,
+      protein_g: nutrition.protein_g ?? nutrition.protein,
+      carbohydrates_g: nutrition.carbohydrates_g ?? nutrition.carbs ?? nutrition.carbohydrates,
+      fat_g: nutrition.fat_g ?? nutrition.fat,
+    };
+  }
+  return null;
+}
+
+function labelFromIng(raw) {
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object' && raw.name != null) return String(raw.name);
+  return String(raw ?? '');
+}
+
 /**
  * @param {{ recipe: object | null, onClose: () => void }} props
  */
@@ -55,17 +95,17 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
 
   const browse = isBrowseShape(recipe);
 
-  const instructions = browse
-    ? recipe.strInstructions || recipe.instructions || ''
-    : recipe.strInstructions || '';
+  const instructions = recipe.strInstructions || recipe.instructions || '';
 
   const recipeIngs = Array.isArray(recipe.recipeIngredients) ? recipe.recipeIngredients : [];
   const matched = Array.isArray(recipe.matchedIngredients) ? recipe.matchedIngredients : [];
   const missing = Array.isArray(recipe.missingIngredients) ? recipe.missingIngredients : [];
   const browseIngs = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  /** Browse API returns recipeIngredients + matched/missing; older docs may only have ingredients[]. */
+  const displayIngredients = recipeIngs.length > 0 ? recipeIngs : browseIngs;
 
   const nutrition = recipe.nutrition && typeof recipe.nutrition === 'object' ? recipe.nutrition : null;
-  const totals = nutrition?.totals;
+  const totals = nutritionTotalsFrom(nutrition);
 
   const pers = recipe.personalization && typeof recipe.personalization === 'object' ? recipe.personalization : null;
 
@@ -88,7 +128,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-black/8 bg-white/90 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-dark/45">
-              {browse ? 'Catalog recipe' : 'Recipe details'}
+              Recipe details
             </p>
             <h2
               id="recipe-detail-title"
@@ -96,7 +136,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             >
               {titleOf(recipe)}
             </h2>
-            {!browse && (recipe.strCategory || recipe.strArea) && (
+            {(recipe.strCategory || recipe.strArea) && (
               <p className="mt-1 text-xs text-brand-dark/55">
                 {[recipe.strCategory, recipe.strArea].filter(Boolean).join(' · ')}
               </p>
@@ -148,7 +188,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             </section>
           )}
 
-          {!browse && (matched.length > 0 || missing.length > 0) && (
+          {(matched.length > 0 || missing.length > 0) && (
             <section className="mt-5">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
                 Fridge match
@@ -168,36 +208,28 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             </section>
           )}
 
-          {(recipeIngs.length > 0 || browseIngs.length > 0) && (
+          {displayIngredients.length > 0 && (
             <section className="mt-5">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
                 Ingredients
               </h3>
-              {browse ? (
-                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-brand-dark/85">
-                  {browseIngs.map((ing, i) => (
-                    <li key={i}>{typeof ing === 'string' ? ing : ing?.name || String(ing)}</li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {recipeIngs.map((raw, i) => {
-                    const label = typeof raw === 'string' ? raw : raw?.name || String(raw);
-                    const st = ingredientFridgeStatus(label, matched, missing);
-                    const chipClass =
-                      st === 'matched'
-                        ? 'rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green'
-                        : st === 'missing'
-                          ? 'rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900'
-                          : 'rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-brand-dark/75';
-                    return (
-                      <span key={i} className={chipClass}>
-                        {label}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {displayIngredients.map((raw, i) => {
+                  const label = labelFromIng(raw);
+                  const st = ingredientFridgeStatus(label, matched, missing);
+                  const chipClass =
+                    st === 'matched'
+                      ? 'rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green'
+                      : st === 'missing'
+                        ? 'rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900'
+                        : 'rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-brand-dark/75';
+                  return (
+                    <span key={i} className={chipClass}>
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
             </section>
           )}
 
@@ -262,9 +294,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
               </p>
             ) : (
               <p className="mt-2 text-sm text-brand-dark/55">
-                {browse
-                  ? 'Step-by-step instructions aren’t included for this catalog entry.'
-                  : 'No instructions were returned for this recipe.'}
+                No instructions were returned for this recipe.
               </p>
             )}
           </section>
