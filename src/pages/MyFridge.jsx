@@ -51,7 +51,15 @@ async function fetchFridgeList() {
     const err = new Error(msg);
     throw err;
   }
-  return res.data.map(mapFridgeDocToUi).filter(Boolean);
+  const fridgeId =
+    res.fridge_id != null && Number.isFinite(Number(res.fridge_id))
+      ? Number(res.fridge_id)
+      : null;
+  if (fridgeId != null) {
+    localStorage.setItem('fridgeId', String(fridgeId));
+  }
+  const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+  return { list, fridgeId };
 }
 
 async function fetchExpiryList(days) {
@@ -60,7 +68,15 @@ async function fetchExpiryList(days) {
     const msg = res?.message || 'Failed to load expiring items';
     throw new Error(msg);
   }
-  return res.data.map(mapFridgeDocToUi).filter(Boolean);
+  const fridgeId =
+    res.fridge_id != null && Number.isFinite(Number(res.fridge_id))
+      ? Number(res.fridge_id)
+      : null;
+  if (fridgeId != null) {
+    localStorage.setItem('fridgeId', String(fridgeId));
+  }
+  const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+  return { list, fridgeId };
 }
 
 const MyFridge = () => {
@@ -116,11 +132,11 @@ const MyFridge = () => {
   }, [expiringWindowDays]);
 
   const refetch = useCallback(async () => {
-    const list = await fetchFridgeList();
+    const { list } = await fetchFridgeList();
     setIngredients(list);
     if (fridgeView === 'expiry') {
       try {
-        const exp = await fetchExpiryList(appliedExpiryDays);
+        const { list: exp } = await fetchExpiryList(appliedExpiryDays);
         setExpiryItems(exp);
         setExpiryError('');
       } catch (e) {
@@ -140,7 +156,7 @@ const MyFridge = () => {
       setExpiryLoading(true);
       setExpiryError('');
       try {
-        const list = await fetchExpiryList(appliedExpiryDays);
+        const { list } = await fetchExpiryList(appliedExpiryDays);
         if (!cancelled) setExpiryItems(list);
       } catch (e) {
         if (!cancelled) {
@@ -178,7 +194,7 @@ const MyFridge = () => {
       setLoading(true);
       setLoadError('');
       try {
-        const list = await fetchFridgeList();
+        const { list } = await fetchFridgeList();
         if (!cancelled) setIngredients(list);
       } catch (e) {
         if (!cancelled) {
@@ -195,6 +211,15 @@ const MyFridge = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const onHouseholdJoined = () => {
+      refetch();
+    };
+    window.addEventListener('fridge-household-joined', onHouseholdJoined);
+    return () =>
+      window.removeEventListener('fridge-household-joined', onHouseholdJoined);
+  }, [refetch]);
 
   const filteredSorted = useMemo(() => {
     let list = [...ingredients];

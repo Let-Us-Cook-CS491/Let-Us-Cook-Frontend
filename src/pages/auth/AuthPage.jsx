@@ -149,6 +149,10 @@ const SignInForm = () => {
       if (userId) {
         localStorage.setItem('userId', String(userId));
       }
+      const fridgeId = data?.data?.fridge_id;
+      if (fridgeId != null) {
+        localStorage.setItem('fridgeId', String(fridgeId));
+      }
 
       navigate('/dashboard');
       return;
@@ -279,6 +283,10 @@ const SignUpForm = () => {
       }
       if (userId) {
         localStorage.setItem('userId', String(userId));
+      }
+      const fridgeId = data?.data?.fridge_id;
+      if (fridgeId != null) {
+        localStorage.setItem('fridgeId', String(fridgeId));
       }
 
       navigate('/dashboard');

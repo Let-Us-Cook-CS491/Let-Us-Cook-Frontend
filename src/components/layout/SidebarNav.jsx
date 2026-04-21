@@ -32,6 +32,7 @@ const SidebarNav = () => {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('userId');
+      localStorage.removeItem('fridgeId');
       navigate('/');
       setLoading(false);
     }

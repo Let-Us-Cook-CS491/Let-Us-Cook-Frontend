@@ -48,3 +48,26 @@ export const updateFridgeItem = (body) =>
     body,
     headers: authHeaders(),
   });
+
+/**
+ * Create a one-time invite code for this fridge (~24h expiry). Owner only.
+ * @param {number|string} fridgeId
+ */
+export const createFridgeInvite = (fridgeId) =>
+  request({
+    url: `/fridge/${fridgeId}/invite`,
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+/**
+ * Join another user's fridge with an invite code (single use).
+ * @param {{ invite_code: string }} body
+ */
+export const joinFridgeByInvite = (body) =>
+  request({
+    url: '/fridge/join',
+    method: 'POST',
+    body,
+    headers: authHeaders(),
+  });
