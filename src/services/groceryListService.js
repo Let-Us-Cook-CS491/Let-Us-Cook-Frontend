@@ -1,74 +1,85 @@
 import { request } from './apiClient';
 
-const listBase =
-  import.meta.env.VITE_GROCERY_LIST_PATH || '/grocery-list';
-
 const authHeaders = () => {
   const token = localStorage.getItem('accessToken');
-  if (!token) return undefined;
-  return { Authorization: `Bearer ${token}` };
+  return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-/** True when the server has no grocery route (HTML 404) or similar. */
-export const isGroceryApiUnavailableError = (thrown) => {
-  const s =
-    typeof thrown === 'string'
-      ? thrown
-      : thrown != null && typeof thrown.message === 'string'
-        ? thrown.message
-        : '';
-  const sample = s.slice(0, 800).toLowerCase();
-  return (
-    sample.includes('<!doctype') ||
-    sample.includes('<html') ||
-    sample.includes('cannot get') ||
-    sample.includes('cannot post') ||
-    sample.includes('cannot delete') ||
-    sample.includes('cannot patch')
-  );
-};
+/** Paths under VITE_API_URL (must include `/api`) */
+const base = '/grocery/lists';
 
-/**
- * GET /api/grocery-list
- * Expected: { data: { items: [...] } } or { items: [...] }
- */
-export const fetchGroceryList = () =>
+export const createGroceryList = (body) =>
   request({
-    url: listBase,
+    url: base,
+    method: 'POST',
+    body,
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+  });
+
+export const fetchGroceryLists = (params) =>
+  request({
+    url: base,
+    method: 'GET',
+    params,
+    headers: authHeaders(),
+  });
+
+export const fetchGroceryList = (listId) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}`,
     method: 'GET',
     headers: authHeaders(),
   });
 
-/**
- * POST /api/grocery-list/items
- * Body: { name, quantity?: number, unit?: string }
- */
-export const addGroceryItem = (body) =>
+export const addItemsToGroceryList = (listId, items) =>
   request({
-    url: `${listBase}/items`,
+    url: `${base}/${encodeURIComponent(listId)}/items`,
     method: 'POST',
-    body,
-    headers: authHeaders(),
+    body: { items },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
   });
 
-/**
- * DELETE /api/grocery-list/items/:id
- */
-export const removeGroceryItem = (id) =>
+export const patchItemPurchase = (listId, itemId, purchased) =>
   request({
-    url: `${listBase}/items/${encodeURIComponent(id)}`,
+    url: `${base}/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/purchase`,
+    method: 'PATCH',
+    body: { purchased },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+  });
+
+export const patchItemsPurchaseBatch = (listId, itemIds, purchased) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}/items/purchase-batch`,
+    method: 'PATCH',
+    body: { itemIds, purchased },
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+  });
+
+export const addGroceryItemToFridge = (listId, itemId, body) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/add-to-fridge`,
+    method: 'POST',
+    body,
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+  });
+
+export const deleteGroceryListItem = (listId, itemId) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}`,
     method: 'DELETE',
     headers: authHeaders(),
   });
 
-/**
- * PATCH /api/grocery-list/items/:id
- * Body: { purchased?: boolean, quantity?: number, unit?: string }
- */
-export const patchGroceryItem = (id, body) =>
+export const archiveGroceryList = (listId) =>
   request({
-    url: `${listBase}/items/${encodeURIComponent(id)}`,
+    url: `${base}/${encodeURIComponent(listId)}/archive`,
     method: 'PATCH',
-    body,
+    headers: authHeaders(),
+  });
+
+export const deleteGroceryList = (listId) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}`,
+    method: 'DELETE',
     headers: authHeaders(),
   });

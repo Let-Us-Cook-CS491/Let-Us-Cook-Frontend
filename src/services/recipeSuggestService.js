@@ -51,6 +51,7 @@ export const browseRecipes = (params = {}) =>
  * GET /api/recipes/personalized
  * AI-ranked picks from fridge + preferences + health goals (Gemini with deterministic fallback).
  * Query: limit (default 5, max 15), maxMissingIngredients (default 4, max 10), includeReasons (default true)
+ * Optional AI recipe request: cuisine, mealType (breakfast|lunch|dinner|snack), servings (1–20), maxMinutes (5–300)
  */
 export const getPersonalizedRecommendations = (params = {}) =>
   request({

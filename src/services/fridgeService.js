@@ -6,7 +6,7 @@ const authHeaders = () => {
 };
 
 /**
- * @param {object} [params] - category, limit, skip, expiringInDays
+ * @param {object} [params] - category, limit, skip (offset for paging), expiringInDays
  */
 export const getFridgeItems = (params) =>
   request({

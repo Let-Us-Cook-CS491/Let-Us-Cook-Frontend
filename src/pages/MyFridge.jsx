@@ -13,6 +13,8 @@ import {
   Refrigerator,
   Sparkles,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import IngredientCard, {
   daysUntil,
@@ -30,9 +32,11 @@ import {
 } from '../services/fridgeService';
 import { mapFridgeDocToUi, FRIDGE_CATEGORIES } from '../utils/fridgeItem';
 
-const GRID_COLS = 4;
-const GRID_ROWS = 4;
+const GRID_COLS = 3;
+const GRID_ROWS = 3;
 const SLOT_COUNT = GRID_COLS * GRID_ROWS;
+const PAGE_SIZE = SLOT_COUNT;
+const SEARCH_FETCH_CAP = 200;
 
 const DEFAULT_EXPIRY_WINDOW = 3;
 const MIN_EXPIRY_WINDOW = 1;
@@ -44,39 +48,27 @@ const toNumber = (value) => {
   return Number.isFinite(num) ? num : null;
 };
 
-async function fetchFridgeList() {
-  const res = await getFridgeItems({ limit: 200 });
-  if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
-    const msg = res?.message || 'Failed to load fridge';
-    const err = new Error(msg);
-    throw err;
+function syncFridgeIdFromResponse(res) {
+  const id = res?.fridge_id;
+  if (id != null && Number.isFinite(Number(id))) {
+    localStorage.setItem('fridgeId', String(id));
   }
-  const fridgeId =
-    res.fridge_id != null && Number.isFinite(Number(res.fridge_id))
-      ? Number(res.fridge_id)
-      : null;
-  if (fridgeId != null) {
-    localStorage.setItem('fridgeId', String(fridgeId));
-  }
-  const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
-  return { list, fridgeId };
 }
 
-async function fetchExpiryList(days) {
-  const res = await getFridgeItems({ expiringInDays: days });
-  if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
-    const msg = res?.message || 'Failed to load expiring items';
-    throw new Error(msg);
-  }
-  const fridgeId =
-    res.fridge_id != null && Number.isFinite(Number(res.fridge_id))
-      ? Number(res.fridge_id)
-      : null;
-  if (fridgeId != null) {
-    localStorage.setItem('fridgeId', String(fridgeId));
-  }
-  const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
-  return { list, fridgeId };
+/** Client-only search on mapped rows (API has no text search). */
+function filterBySearch(mapped, qRaw) {
+  const q = qRaw.trim().toLowerCase();
+  if (!q) return mapped;
+  return mapped.filter(
+    (i) =>
+      i.name.toLowerCase().includes(q) ||
+      i.category.toLowerCase().includes(q) ||
+      (i.location && i.location.toLowerCase().includes(q)),
+  );
+}
+
+function sortByExpiry(a, b) {
+  return daysUntil(a.expiresOn) - daysUntil(b.expiresOn);
 }
 
 const MyFridge = () => {
@@ -113,7 +105,20 @@ const MyFridge = () => {
   const [windowTouched, setWindowTouched] = useState(false);
 
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  const [allPage, setAllPage] = useState(1);
+  const [expiryPage, setExpiryPage] = useState(1);
+  const [allHasNext, setAllHasNext] = useState(false);
+  const [allHasPrev, setAllHasPrev] = useState(false);
+  const [expiryHasNext, setExpiryHasNext] = useState(false);
+  const [expiryHasPrev, setExpiryHasPrev] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const [statsTotal, setStatsTotal] = useState(null);
+  const [statsExpiringSoon, setStatsExpiringSoon] = useState(null);
+  const [statsCapped, setStatsCapped] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState('add');
@@ -131,20 +136,138 @@ const MyFridge = () => {
     return '';
   }, [expiringWindowDays]);
 
-  const refetch = useCallback(async () => {
-    const { list } = await fetchFridgeList();
-    setIngredients(list);
-    if (fridgeView === 'expiry') {
-      try {
-        const { list: exp } = await fetchExpiryList(appliedExpiryDays);
-        setExpiryItems(exp);
-        setExpiryError('');
-      } catch (e) {
-        setExpiryItems([]);
-        setExpiryError(e?.message || 'Could not refresh expiring items.');
-      }
+  const refetch = useCallback(() => {
+    setAllPage(1);
+    setExpiryPage(1);
+    setReloadNonce((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setAllPage(1);
+    setExpiryPage(1);
+  }, [categoryFilter, debouncedSearch]);
+
+  useEffect(() => {
+    if (!localStorage.getItem('accessToken')) {
+      setStatsTotal(null);
+      setStatsExpiringSoon(null);
+      setStatsCapped(false);
+      return;
     }
-  }, [fridgeView, appliedExpiryDays]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getFridgeItems({
+          limit: SEARCH_FETCH_CAP,
+          skip: 0,
+        });
+        if (cancelled) return;
+        syncFridgeIdFromResponse(res);
+        if (res?.status !== 'OK' || !Array.isArray(res?.data)) return;
+        const raw = res.data;
+        const mapped = raw.map(mapFridgeDocToUi).filter(Boolean);
+        const soon = mapped.filter((i) => {
+          const d = daysUntil(i.expiresOn);
+          return d >= 0 && d <= EXPIRING_SOON_DAYS;
+        }).length;
+        setStatsTotal(raw.length);
+        setStatsExpiringSoon(soon);
+        setStatsCapped(raw.length >= SEARCH_FETCH_CAP);
+      } catch {
+        if (!cancelled) {
+          setStatsTotal(null);
+          setStatsExpiringSoon(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadNonce]);
+
+  useEffect(() => {
+    if (fridgeView !== 'all') return;
+    let cancelled = false;
+
+    const run = async () => {
+      if (!localStorage.getItem('accessToken')) {
+        setLoadError('Sign in to view and manage your fridge.');
+        setIngredients([]);
+        setLoading(false);
+        setAllHasNext(false);
+        setAllHasPrev(false);
+        return;
+      }
+
+      setLoading(true);
+      setLoadError('');
+      try {
+        const catParam =
+          categoryFilter !== 'all' ? { category: categoryFilter } : {};
+
+        if (debouncedSearch.trim()) {
+          const res = await getFridgeItems({
+            limit: SEARCH_FETCH_CAP,
+            skip: 0,
+            ...catParam,
+          });
+          if (cancelled) return;
+          syncFridgeIdFromResponse(res);
+          if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
+            throw new Error(res?.message || 'Could not load fridge.');
+          }
+          let list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+          list = filterBySearch(list, debouncedSearch);
+          list.sort(sortByExpiry);
+          const start = (allPage - 1) * PAGE_SIZE;
+          setIngredients(list.slice(start, start + PAGE_SIZE));
+          setAllHasPrev(allPage > 1);
+          setAllHasNext(start + PAGE_SIZE < list.length);
+        } else {
+          const skip = (allPage - 1) * PAGE_SIZE;
+          const res = await getFridgeItems({
+            limit: PAGE_SIZE,
+            skip,
+            ...catParam,
+          });
+          if (cancelled) return;
+          syncFridgeIdFromResponse(res);
+          if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
+            throw new Error(res?.message || 'Could not load fridge.');
+          }
+          const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+          setIngredients(list);
+          setAllHasPrev(allPage > 1);
+          setAllHasNext(res.data.length === PAGE_SIZE);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setLoadError(e?.message || 'Could not load fridge.');
+          setIngredients([]);
+          setAllHasNext(false);
+          setAllHasPrev(false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fridgeView,
+    allPage,
+    categoryFilter,
+    debouncedSearch,
+    reloadNonce,
+  ]);
 
   useEffect(() => {
     if (fridgeView !== 'expiry') return;
@@ -156,12 +279,52 @@ const MyFridge = () => {
       setExpiryLoading(true);
       setExpiryError('');
       try {
-        const { list } = await fetchExpiryList(appliedExpiryDays);
-        if (!cancelled) setExpiryItems(list);
+        const catParam =
+          categoryFilter !== 'all' ? { category: categoryFilter } : {};
+
+        if (debouncedSearch.trim()) {
+          const res = await getFridgeItems({
+            expiringInDays: appliedExpiryDays,
+            limit: SEARCH_FETCH_CAP,
+            skip: 0,
+            ...catParam,
+          });
+          if (cancelled) return;
+          syncFridgeIdFromResponse(res);
+          if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
+            throw new Error(res?.message || 'Could not load expiring items.');
+          }
+          let list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+          list = filterBySearch(list, debouncedSearch);
+          list.sort(sortByExpiry);
+          const start = (expiryPage - 1) * PAGE_SIZE;
+          setExpiryItems(list.slice(start, start + PAGE_SIZE));
+          setExpiryHasPrev(expiryPage > 1);
+          setExpiryHasNext(start + PAGE_SIZE < list.length);
+        } else {
+          const skip = (expiryPage - 1) * PAGE_SIZE;
+          const res = await getFridgeItems({
+            expiringInDays: appliedExpiryDays,
+            limit: PAGE_SIZE,
+            skip,
+            ...catParam,
+          });
+          if (cancelled) return;
+          syncFridgeIdFromResponse(res);
+          if (res?.status !== 'OK' || !Array.isArray(res?.data)) {
+            throw new Error(res?.message || 'Could not load expiring items.');
+          }
+          const list = res.data.map(mapFridgeDocToUi).filter(Boolean);
+          setExpiryItems(list);
+          setExpiryHasPrev(expiryPage > 1);
+          setExpiryHasNext(res.data.length === PAGE_SIZE);
+        }
       } catch (e) {
         if (!cancelled) {
           setExpiryError(e?.message || 'Could not load expiring items.');
           setExpiryItems([]);
+          setExpiryHasNext(false);
+          setExpiryHasPrev(false);
         }
       } finally {
         if (!cancelled) setExpiryLoading(false);
@@ -172,45 +335,20 @@ const MyFridge = () => {
     return () => {
       cancelled = true;
     };
-  }, [fridgeView, appliedExpiryDays]);
+  }, [
+    fridgeView,
+    expiryPage,
+    appliedExpiryDays,
+    categoryFilter,
+    debouncedSearch,
+    reloadNonce,
+  ]);
 
   useEffect(() => {
     if (fridgeView !== 'expiry') return;
     setExpiringWindowDays(String(appliedExpiryDays));
     setWindowTouched(false);
   }, [fridgeView]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!localStorage.getItem('accessToken')) {
-        setLoadError('Sign in to view and manage your fridge.');
-        setIngredients([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setLoadError('');
-      try {
-        const { list } = await fetchFridgeList();
-        if (!cancelled) setIngredients(list);
-      } catch (e) {
-        if (!cancelled) {
-          setLoadError(e?.message || 'Could not load fridge.');
-          setIngredients([]);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const onHouseholdJoined = () => {
@@ -221,44 +359,15 @@ const MyFridge = () => {
       window.removeEventListener('fridge-household-joined', onHouseholdJoined);
   }, [refetch]);
 
-  const filteredSorted = useMemo(() => {
-    let list = [...ingredients];
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.category.toLowerCase().includes(q) ||
-          (i.location && i.location.toLowerCase().includes(q)),
-      );
-    }
-    if (categoryFilter !== 'all') {
-      list = list.filter((i) => i.category === categoryFilter);
-    }
-    list.sort((a, b) => daysUntil(a.expiresOn) - daysUntil(b.expiresOn));
-    return list;
-  }, [ingredients, search, categoryFilter]);
+  const visibleIngredients = useMemo(() => ingredients, [ingredients]);
 
-  const filteredExpiry = useMemo(() => {
-    let list = [...expiryItems];
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (i) =>
-          i.name.toLowerCase().includes(q) ||
-          i.category.toLowerCase().includes(q) ||
-          (i.location && i.location.toLowerCase().includes(q)),
-      );
+  const slots = useMemo(() => {
+    const cells = [];
+    for (let i = 0; i < SLOT_COUNT; i += 1) {
+      cells.push(visibleIngredients[i] ?? null);
     }
-    if (categoryFilter !== 'all') {
-      list = list.filter((i) => i.category === categoryFilter);
-    }
-    list.sort((a, b) => daysUntil(a.expiresOn) - daysUntil(b.expiresOn));
-    return list;
-  }, [expiryItems, search, categoryFilter]);
-
-  const visibleIngredients = filteredSorted.slice(0, SLOT_COUNT);
-  const hiddenCount = Math.max(filteredSorted.length - SLOT_COUNT, 0);
+    return cells;
+  }, [visibleIngredients]);
 
   const openAdd = useCallback(() => {
     if (!localStorage.getItem('accessToken')) return;
@@ -297,7 +406,7 @@ const MyFridge = () => {
           ...(payload.location ? { location: payload.location } : {}),
         });
       }
-      await refetch();
+      refetch();
     },
     [formMode, editingItem, refetch],
   );
@@ -309,7 +418,7 @@ const MyFridge = () => {
       item_id: deleteTarget.id,
       count: count > 0 ? count : 1,
     });
-    await refetch();
+    refetch();
   }, [deleteTarget, refetch]);
 
   const handleApplyExpiryWindow = (event) => {
@@ -318,24 +427,31 @@ const MyFridge = () => {
     if (windowValidationError) return;
     const days = toNumber(expiringWindowDays);
     if (days === null) return;
+    setExpiryPage(1);
     setAppliedExpiryDays(days);
   };
 
-  const slots = useMemo(() => {
-    const cells = [];
-    for (let i = 0; i < SLOT_COUNT; i += 1) {
-      cells.push(visibleIngredients[i] ?? null);
-    }
-    return cells;
-  }, [visibleIngredients]);
-
-  const totalInFridge = ingredients.length;
-  const expiringSoonCount = ingredients.filter((i) => {
-    const d = daysUntil(i.expiresOn);
-    return d >= 0 && d <= EXPIRING_SOON_DAYS;
-  }).length;
+  const totalLabel =
+    statsTotal == null
+      ? '…'
+      : statsCapped
+        ? `${statsTotal}+`
+        : String(statsTotal);
 
   const isAuthed = Boolean(localStorage.getItem('accessToken'));
+
+  const allRangeLabel =
+    fridgeView === 'all' && !loadError && isAuthed
+      ? (() => {
+          const count = visibleIngredients.filter(Boolean).length;
+          if (count === 0) return 'No items on this page';
+          const start = (allPage - 1) * PAGE_SIZE + 1;
+          const end = start + count - 1;
+          return debouncedSearch.trim()
+            ? `Showing ${start}–${end} (search)`
+            : `Page ${allPage} · items ${start}–${end}`;
+        })()
+      : '';
 
   return (
     <div className="h-full min-h-0">
@@ -373,7 +489,6 @@ const MyFridge = () => {
       <div className="flex h-full min-h-0 flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-6">
         <aside className="flex min-h-[min(52vh,420px)] shrink-0 flex-col rounded-2xl border border-black/5 bg-gradient-to-b from-brand-green/12 via-[#E8EBE4] to-brand-beige/40 p-3 shadow-sm sm:p-4 lg:min-h-0 lg:h-full lg:w-72 xl:w-80">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border-2 border-dashed border-brand-green/25 bg-white/60">
-            {/* Icon fills all available space above the stats strip */}
             <div className="relative flex min-h-[11rem] flex-1 flex-col p-1 sm:min-h-[13rem] sm:p-2 lg:min-h-0">
               <Refrigerator
                 className="block h-full w-full flex-1 text-brand-green drop-shadow-md"
@@ -389,13 +504,15 @@ const MyFridge = () => {
               </h2>
               <p className="mt-1 flex items-center justify-center gap-1.5 text-xs text-brand-dark/55">
                 <Sparkles className="h-3.5 w-3.5 shrink-0" />
-                {loading ? '…' : `${totalInFridge} items stored`}
+                {loading && statsTotal == null
+                  ? '…'
+                  : `${totalLabel} items stored`}
               </p>
               <div className="mx-auto mt-2 max-w-[220px] space-y-1.5 text-left text-[10px] text-brand-dark/50 sm:text-[11px]">
                 <div className="flex justify-between gap-2">
                   <span>Expiring soon</span>
                   <span className="font-semibold text-amber-800">
-                    {loading ? '—' : expiringSoonCount}
+                    {statsExpiringSoon == null ? '—' : statsExpiringSoon}
                   </span>
                 </div>
                 <div className="h-px bg-black/10" />
@@ -555,12 +672,30 @@ const MyFridge = () => {
             </>
           )}
 
-          {fridgeView === 'all' && hiddenCount > 0 && (
-            <p className="mt-3 text-xs text-amber-800">
-              Showing first {SLOT_COUNT} of {filteredSorted.length} matching
-              items. Narrow your search or remove items to see the rest in this
-              grid.
-            </p>
+          {fridgeView === 'all' && !loadError && isAuthed && (
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-brand-dark/55">{allRangeLabel}</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  disabled={!allHasPrev || loading}
+                  onClick={() => setAllPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-[#F7F7F2] text-brand-dark hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  disabled={!allHasNext || loading}
+                  onClick={() => setAllPage((p) => p + 1)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-[#F7F7F2] text-brand-dark hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
           )}
 
           <div className="relative mt-4 min-h-0 flex-1 overflow-x-auto overflow-y-auto pb-1">
@@ -571,24 +706,25 @@ const MyFridge = () => {
               </div>
             )}
             {fridgeView === 'all' ? (
-              <div className="grid w-full min-w-[480px] grid-cols-4 gap-3 sm:gap-4 md:min-w-0">
+              <div className="grid w-full min-w-[360px] grid-cols-3 auto-rows-[15rem] gap-2 sm:auto-rows-[16rem] sm:gap-3 md:min-w-0">
                 {slots.map((item, index) =>
                   item ? (
-                    <IngredientCard
-                      key={item.id}
-                      item={item}
-                      onEdit={openEdit}
-                      onRemove={setDeleteTarget}
-                    />
+                    <div key={item.id} className="h-full min-h-0">
+                      <IngredientCard
+                        item={item}
+                        onEdit={openEdit}
+                        onRemove={setDeleteTarget}
+                      />
+                    </div>
                   ) : (
                     <button
                       key={`empty-${index}`}
                       type="button"
                       onClick={openAdd}
                       disabled={!isAuthed || loading}
-                      className="flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-[188px]"
+                      className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-black/10 bg-[#F7F7F2]/80 text-brand-dark/40 transition-colors hover:border-brand-green/35 hover:bg-brand-green/5 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <Plus className="h-8 w-8" strokeWidth={1.75} />
+                      <Plus className="h-7 w-7" strokeWidth={1.75} />
                       <span className="text-[10px] font-semibold uppercase tracking-wide">
                         Add
                       </span>
@@ -602,7 +738,7 @@ const MyFridge = () => {
                   !expiryLoading &&
                   !loading &&
                   !expiryError &&
-                  filteredExpiry.length === 0 && (
+                  expiryItems.length === 0 && (
                     <div className="rounded-2xl border border-black/5 bg-[#F7F7F2]/80 px-4 py-10 text-center text-sm text-brand-dark/65">
                       No items expiring in the next {appliedExpiryDays} days
                       {search.trim() || categoryFilter !== 'all'
@@ -610,17 +746,47 @@ const MyFridge = () => {
                         : '.'}
                     </div>
                   )}
-                {filteredExpiry.length > 0 && (
-                  <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-                    {filteredExpiry.map((item) => (
-                      <IngredientCard
-                        key={item.id}
-                        item={item}
-                        onEdit={openEdit}
-                        onRemove={setDeleteTarget}
-                      />
-                    ))}
-                  </div>
+                {expiryItems.length > 0 && (
+                  <>
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-brand-dark/55">
+                        Page {expiryPage}
+                        {debouncedSearch.trim() ? ' · search' : ''}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label="Previous expiry page"
+                          disabled={!expiryHasPrev || expiryLoading}
+                          onClick={() =>
+                            setExpiryPage((p) => Math.max(1, p - 1))
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-[#F7F7F2] text-brand-dark hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Next expiry page"
+                          disabled={!expiryHasNext || expiryLoading}
+                          onClick={() => setExpiryPage((p) => p + 1)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-[#F7F7F2] text-brand-dark hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-3">
+                      {expiryItems.map((item) => (
+                        <IngredientCard
+                          key={item.id}
+                          item={item}
+                          onEdit={openEdit}
+                          onRemove={setDeleteTarget}
+                        />
+                      ))}
+                    </div>
+                  </>
                 )}
               </>
             )}

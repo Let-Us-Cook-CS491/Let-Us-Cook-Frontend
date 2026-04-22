@@ -6,14 +6,20 @@ function isBrowseShape(r) {
   return r && r._id != null && r.title != null;
 }
 
+function isGeneratedAiRecipe(r) {
+  return r && r.source === 'generated';
+}
+
 function titleOf(r) {
   if (!r) return 'Recipe';
   if (isBrowseShape(r)) return r.title || 'Recipe';
+  if (isGeneratedAiRecipe(r)) return r.title || 'Recipe';
   return r.strMeal || r.title || 'Recipe';
 }
 
 function imageOf(r) {
   if (!r) return '';
+  if (isGeneratedAiRecipe(r)) return '';
   if (isBrowseShape(r)) return r.image_url || '';
   return r.strMealThumb || r.image_url || '';
 }
@@ -94,6 +100,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
   if (!recipe) return null;
 
   const browse = isBrowseShape(recipe);
+  const generated = isGeneratedAiRecipe(recipe);
 
   const instructions = recipe.strInstructions || recipe.instructions || '';
 
@@ -101,8 +108,14 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
   const matched = Array.isArray(recipe.matchedIngredients) ? recipe.matchedIngredients : [];
   const missing = Array.isArray(recipe.missingIngredients) ? recipe.missingIngredients : [];
   const browseIngs = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-  /** Browse API returns recipeIngredients + matched/missing; older docs may only have ingredients[]. */
   const displayIngredients = recipeIngs.length > 0 ? recipeIngs : browseIngs;
+
+  const genSteps = generated && Array.isArray(recipe.steps) ? recipe.steps : [];
+  const usedFromFridge = generated && Array.isArray(recipe.usedFromFridge) ? recipe.usedFromFridge : [];
+  const optionalPantry =
+    generated && Array.isArray(recipe.optionalPantry) ? recipe.optionalPantry : [];
+  const responseFilters =
+    recipe.responseFilters && typeof recipe.responseFilters === 'object' ? recipe.responseFilters : null;
 
   const nutrition = recipe.nutrition && typeof recipe.nutrition === 'object' ? recipe.nutrition : null;
   const totals = nutritionTotalsFrom(nutrition);
@@ -128,7 +141,7 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-black/8 bg-white/90 px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-dark/45">
-              Recipe details
+              {generated ? 'AI-generated recipe' : 'Recipe details'}
             </p>
             <h2
               id="recipe-detail-title"
@@ -136,7 +149,26 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             >
               {titleOf(recipe)}
             </h2>
-            {(recipe.strCategory || recipe.strArea) && (
+            {generated && (recipe.prepMinutes != null || recipe.servings != null) && (
+              <p className="mt-1 text-xs text-brand-dark/55">
+                {recipe.prepMinutes != null && <span>~{recipe.prepMinutes} min prep</span>}
+                {recipe.prepMinutes != null && recipe.servings != null && <span> · </span>}
+                {recipe.servings != null && <span>{recipe.servings} servings</span>}
+              </p>
+            )}
+            {generated && responseFilters && (
+              <p className="mt-1 text-xs text-brand-dark/50">
+                {[
+                  responseFilters.cuisine,
+                  responseFilters.mealType,
+                  responseFilters.servings != null && `${responseFilters.servings} people`,
+                  responseFilters.maxMinutes != null && `≤${responseFilters.maxMinutes} min`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            )}
+            {!generated && (recipe.strCategory || recipe.strArea) && (
               <p className="mt-1 text-xs text-brand-dark/55">
                 {[recipe.strCategory, recipe.strArea].filter(Boolean).join(' · ')}
               </p>
@@ -163,6 +195,15 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             )}
           </div>
 
+          {generated && recipe.description && (
+            <section className="mt-5">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
+                Description
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-brand-dark/85">{recipe.description}</p>
+            </section>
+          )}
+
           {pers && (
             <section className="mt-5 rounded-2xl border border-brand-green/25 bg-brand-green/[0.08] px-4 py-3 text-sm text-brand-dark">
               <p className="text-[10px] font-bold uppercase tracking-wide text-brand-green">Personalization</p>
@@ -188,7 +229,43 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
             </section>
           )}
 
-          {(matched.length > 0 || missing.length > 0) && (
+          {generated && usedFromFridge.length > 0 && (
+            <section className="mt-5">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
+                From your fridge
+              </h3>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {usedFromFridge.map((name) => (
+                  <span
+                    key={name}
+                    className="rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {generated && optionalPantry.length > 0 && (
+            <section className="mt-5">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
+                Optional pantry
+              </h3>
+              <ul className="mt-2 space-y-1.5 text-sm text-brand-dark/85">
+                {optionalPantry.map((item, i) => (
+                  <li key={i}>
+                    <span className="font-medium">{item?.name || '—'}</span>
+                    {item?.purpose ? (
+                      <span className="text-brand-dark/60"> — {item.purpose}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {!generated && (matched.length > 0 || missing.length > 0) && (
             <section className="mt-5">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
                 Fridge match
@@ -213,23 +290,36 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
                 Ingredients
               </h3>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {displayIngredients.map((raw, i) => {
-                  const label = labelFromIng(raw);
-                  const st = ingredientFridgeStatus(label, matched, missing);
-                  const chipClass =
-                    st === 'matched'
-                      ? 'rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green'
-                      : st === 'missing'
-                        ? 'rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900'
-                        : 'rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-brand-dark/75';
-                  return (
-                    <span key={i} className={chipClass}>
-                      {label}
-                    </span>
-                  );
-                })}
-              </div>
+              {generated ? (
+                <ul className="mt-2 space-y-1.5 text-sm text-brand-dark/90">
+                  {browseIngs.map((ing, i) => (
+                    <li key={i}>
+                      <span className="font-medium">{ing?.name || '—'}</span>
+                      {ing?.amount != null && String(ing.amount).trim() ? (
+                        <span className="text-brand-dark/60"> — {ing.amount}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {displayIngredients.map((raw, i) => {
+                    const label = labelFromIng(raw);
+                    const st = ingredientFridgeStatus(label, matched, missing);
+                    const chipClass =
+                      st === 'matched'
+                        ? 'rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green'
+                        : st === 'missing'
+                          ? 'rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900'
+                          : 'rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-brand-dark/75';
+                    return (
+                      <span key={i} className={chipClass}>
+                        {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           )}
 
@@ -288,7 +378,13 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
 
           <section className="mt-5">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">Instructions</h3>
-            {instructions && String(instructions).trim() ? (
+            {genSteps.length > 0 ? (
+              <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-brand-dark/85">
+                {genSteps.map((step, i) => (
+                  <li key={i}>{String(step)}</li>
+                ))}
+              </ol>
+            ) : instructions && String(instructions).trim() ? (
               <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-brand-dark/85">
                 {String(instructions).trim()}
               </p>

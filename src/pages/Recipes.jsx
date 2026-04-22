@@ -9,6 +9,7 @@ import {
   Sparkles,
   Search,
   X,
+  Wand2,
 } from 'lucide-react';
 import {
   suggestRecipesFromFridge,
@@ -17,14 +18,46 @@ import {
 } from '../services/recipeSuggestService';
 import { setDietPreferences } from '../services/dietPreferencesService';
 import RecipeDetailModal from '../components/recipes/RecipeDetailModal';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 
 const BROWSE_PAGE = 20;
+
+const AI_MEAL_TYPES = [
+  { value: 'breakfast', label: 'Breakfast' },
+  { value: 'lunch', label: 'Lunch' },
+  { value: 'dinner', label: 'Dinner' },
+  { value: 'snack', label: 'Snack' },
+];
 
 function apiErrorMessage(err) {
   if (!err) return 'Something went wrong.';
   if (typeof err === 'string') return err;
   if (err.message) return err.message;
   return 'Something went wrong.';
+}
+
+function isGeneratedRecipe(r) {
+  return r && r.source === 'generated';
+}
+
+function formatApiStrategyShort(s) {
+  if (s === 'generated') return 'AI generated';
+  if (s === 'llm_first') return 'AI-ranked';
+  if (s === 'deterministic_fallback') return 'Ranked (fallback)';
+  return s || '';
+}
+
+function filtersSummaryLine(filters) {
+  if (!filters || typeof filters !== 'object') return '';
+  return [
+    filters.cuisine,
+    filters.mealType,
+    filters.servings != null && `${filters.servings} people`,
+    filters.maxMinutes != null && `≤${filters.maxMinutes} min`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 const Recipes = () => {
@@ -53,6 +86,16 @@ const Recipes = () => {
   const [personalizedError, setPersonalizedError] = useState('');
 
   const [detailRecipe, setDetailRecipe] = useState(null);
+
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiCuisine, setAiCuisine] = useState('');
+  const [aiMealType, setAiMealType] = useState('dinner');
+  const [aiServings, setAiServings] = useState('4');
+  const [aiMaxMinutes, setAiMaxMinutes] = useState('45');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiResults, setAiResults] = useState(null);
+  const [aiMeta, setAiMeta] = useState(null);
 
   const isAuthed = Boolean(localStorage.getItem('accessToken'));
 
@@ -143,6 +186,84 @@ const Recipes = () => {
     loadBrowseAtSkip(newSkip, { isInitial: false, searchText: browseSearchDebounced });
   }, [browsePagination, browseNavLoading, browseLoading, loadBrowseAtSkip, browseSearchDebounced]);
 
+  const openAiModal = useCallback(() => {
+    setAiError('');
+    setAiResults(null);
+    setAiMeta(null);
+    setAiModalOpen(true);
+  }, []);
+
+  const runAiRecipeGenerate = useCallback(async () => {
+    if (!isAuthed) return;
+    const cuisine = aiCuisine.trim();
+    if (!cuisine) {
+      setAiError('Enter a cuisine or region (e.g. Italian).');
+      return;
+    }
+    const servings = Number(aiServings);
+    const maxMin = Number(aiMaxMinutes);
+    if (!Number.isFinite(servings) || servings < 1 || servings > 20) {
+      setAiError('Servings must be between 1 and 20.');
+      return;
+    }
+    if (!Number.isFinite(maxMin) || maxMin < 5 || maxMin > 300) {
+      setAiError('Max minutes must be between 5 and 300.');
+      return;
+    }
+    setAiLoading(true);
+    setAiError('');
+    setAiResults(null);
+    setAiMeta(null);
+    try {
+      const res = await getPersonalizedRecommendations({
+        cuisine,
+        mealType: aiMealType,
+        servings,
+        maxMinutes: maxMin,
+        limit: 8,
+        maxMissingIngredients: 6,
+        includeReasons: true,
+      });
+      if (res?.status !== 'OK') {
+        throw new Error(res?.message || 'Could not generate recipes');
+      }
+      const data = res.data || {};
+      const list = Array.isArray(data.recommendations) ? data.recommendations : [];
+      setAiResults(list);
+      setAiMeta({
+        strategy: data.strategy || '',
+        candidateCount: data.candidateCount ?? 0,
+        aiRecipeRequest: data.aiRecipeRequest || null,
+        filters: data.filters || null,
+      });
+    } catch (e) {
+      setAiError(apiErrorMessage(e));
+      setAiResults(null);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [
+    isAuthed,
+    aiCuisine,
+    aiMealType,
+    aiServings,
+    aiMaxMinutes,
+  ]);
+
+  useEffect(() => {
+    if (!aiModalOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !aiLoading) setAiModalOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [aiModalOpen, aiLoading]);
+
   const loadPersonalized = useCallback(async () => {
     if (!isAuthed) return;
     setPersonalizedLoading(true);
@@ -167,6 +288,7 @@ const Recipes = () => {
         matchingHeuristicUsed: data.matchingHeuristicUsed === true,
         matchingDisclaimer: data.matchingDisclaimer || '',
         expandedInventoryNames: data.expandedInventoryNames,
+        filters: data.filters || null,
       });
     } catch (e) {
       setPersonalizedError(apiErrorMessage(e));
@@ -203,6 +325,7 @@ const Recipes = () => {
 
   const personalizedStrategyLabel = (() => {
     const s = personalizedMeta?.strategy;
+    if (s === 'generated') return 'AI generated';
     if (s === 'llm_first') return 'AI-personalized';
     if (s === 'deterministic_fallback') return 'Ranked (smart fallback)';
     if (s === 'none') return '—';
@@ -255,6 +378,16 @@ const Recipes = () => {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {isAuthed && (
+              <button
+                type="button"
+                onClick={openAiModal}
+                className="inline-flex items-center gap-2 rounded-full border border-brand-green/35 bg-brand-green/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-brand-dark hover:bg-brand-green/15"
+              >
+                <Wand2 className="h-4 w-4 text-brand-green" strokeWidth={2} />
+                AI generate recipe
+              </button>
+            )}
             <button
               type="button"
               onClick={handleRefresh}
@@ -504,8 +637,13 @@ const Recipes = () => {
                 Generate personalized picks
               </button>
             </div>
+            {filtersSummaryLine(personalizedMeta?.filters) && (
+              <p className="mt-3 text-xs text-brand-dark/55">
+                {filtersSummaryLine(personalizedMeta.filters)}
+              </p>
+            )}
             {personalizedMeta?.strategy && personalizedRecipes.length > 0 && (
-              <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-brand-dark/45">
+              <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-brand-dark/45">
                 {personalizedStrategyLabel}
                 {personalizedMeta.candidateCount != null && personalizedMeta.candidateCount > 0 && (
                   <span className="ml-2 normal-case">
@@ -531,7 +669,8 @@ const Recipes = () => {
 
             {!personalizedLoading && personalizedRecipes.length > 0 && (
               <ul className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {personalizedRecipes.map((r) => {
+                {personalizedRecipes.map((r, pIdx) => {
+                  const gen = isGeneratedRecipe(r);
                   const missing = Array.isArray(r.missingIngredients)
                     ? r.missingIngredients.length
                     : 0;
@@ -541,9 +680,12 @@ const Recipes = () => {
                   const thumb = r.strMealThumb || '';
                   const reason = r.personalization?.reason;
                   const effort = r.personalization?.effort;
+                  const usedN = Array.isArray(r.usedFromFridge) ? r.usedFromFridge.length : 0;
+                  const pantryN = Array.isArray(r.optionalPantry) ? r.optionalPantry.length : 0;
+                  const title = gen ? r.title || 'Recipe' : r.strMeal || 'Recipe';
                   return (
                     <li
-                      key={`p-${r.idMeal || r.strMeal}`}
+                      key={`p-${gen ? `g-${pIdx}-${title}` : r.idMeal || r.strMeal || pIdx}`}
                       className="flex flex-col overflow-hidden rounded-2xl border border-black/8 bg-white/80 shadow-sm"
                     >
                       <div className="aspect-video w-full overflow-hidden bg-black/5">
@@ -562,21 +704,46 @@ const Recipes = () => {
                       </div>
                       <div className="flex flex-1 flex-col p-4">
                         <h2 className="line-clamp-2 text-sm font-bold uppercase tracking-wide text-brand-dark">
-                          {r.strMeal || 'Recipe'}
+                          {title}
                         </h2>
+                        {gen && r.description && (
+                          <p className="mt-1 line-clamp-2 text-xs text-brand-dark/55">{r.description}</p>
+                        )}
                         <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wide">
-                          <span className="rounded-full bg-brand-green/15 px-2 py-0.5 text-brand-green">
-                            {matched} matched
-                          </span>
-                          {missing > 0 && (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-900">
-                              {missing} missing
-                            </span>
-                          )}
-                          {effort && (
-                            <span className="rounded-full bg-black/5 px-2 py-0.5 capitalize text-brand-dark/70">
-                              {effort}
-                            </span>
+                          {gen ? (
+                            <>
+                              {usedN > 0 && (
+                                <span className="rounded-full bg-brand-green/15 px-2 py-0.5 text-brand-green">
+                                  {usedN} from fridge
+                                </span>
+                              )}
+                              {pantryN > 0 && (
+                                <span className="rounded-full bg-black/5 px-2 py-0.5 text-brand-dark/70">
+                                  +{pantryN} pantry
+                                </span>
+                              )}
+                              {r.prepMinutes != null && (
+                                <span className="rounded-full bg-black/5 px-2 py-0.5 text-brand-dark/70">
+                                  ~{r.prepMinutes} min
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <span className="rounded-full bg-brand-green/15 px-2 py-0.5 text-brand-green">
+                                {matched} matched
+                              </span>
+                              {missing > 0 && (
+                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-900">
+                                  {missing} missing
+                                </span>
+                              )}
+                              {effort && (
+                                <span className="rounded-full bg-black/5 px-2 py-0.5 capitalize text-brand-dark/70">
+                                  {effort}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                         {reason && (
@@ -586,7 +753,12 @@ const Recipes = () => {
                         )}
                         <button
                           type="button"
-                          onClick={() => setDetailRecipe(r)}
+                          onClick={() =>
+                            setDetailRecipe({
+                              ...r,
+                              responseFilters: personalizedMeta?.filters || null,
+                            })
+                          }
                           className="mt-3 w-full rounded-full border border-black/10 bg-white py-2 text-xs font-semibold uppercase tracking-wide text-brand-dark transition-colors hover:bg-black/[0.04]"
                         >
                           View details
@@ -701,6 +873,260 @@ const Recipes = () => {
           </>
         )}
       </div>
+      {aiModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          role="dialog"
+          aria-modal
+          aria-labelledby="ai-recipe-modal-title"
+          onClick={() => !aiLoading && setAiModalOpen(false)}
+        >
+          <div
+            className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-black/10 px-5 py-4">
+              <h2
+                id="ai-recipe-modal-title"
+                className="text-lg font-bold text-brand-dark"
+              >
+                AI recipe from your fridge
+              </h2>
+              <p className="mt-1 text-sm text-brand-dark/60">
+                Choose cuisine, meal, servings, and time. We&apos;ll rank recipes that fit your
+                inventory and preferences.
+              </p>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {!aiLoading && aiResults === null && (
+                <form
+                  className="space-y-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    runAiRecipeGenerate();
+                  }}
+                >
+                  <Input
+                    label="Cuisine / region"
+                    value={aiCuisine}
+                    onChange={(e) => setAiCuisine(e.target.value)}
+                    placeholder="e.g. Italian, Japanese, Mexican"
+                    required
+                  />
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase text-brand-dark/55">
+                      Meal
+                    </label>
+                    <select
+                      value={aiMealType}
+                      onChange={(e) => setAiMealType(e.target.value)}
+                      className="w-full rounded-xl border border-black/10 bg-[#F7F7F2] px-3 py-2 text-sm text-brand-dark"
+                    >
+                      {AI_MEAL_TYPES.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="People (servings)"
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={aiServings}
+                      onChange={(e) => setAiServings(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Max cook (minutes)"
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={aiMaxMinutes}
+                      onChange={(e) => setAiMaxMinutes(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {aiError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                      {aiError}
+                    </div>
+                  )}
+                  <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      className="rounded-xl px-4 py-2.5 text-sm font-medium text-brand-dark/70 hover:bg-black/5"
+                      onClick={() => setAiModalOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                    <Button type="submit">Generate</Button>
+                  </div>
+                </form>
+              )}
+
+              {aiLoading && (
+                <div className="flex flex-col items-center justify-center gap-4 py-16">
+                  <Loader2 className="h-12 w-12 animate-spin text-brand-green" />
+                  <p className="text-center text-sm font-medium text-brand-dark">
+                    Generating personalized recipes…
+                  </p>
+                  <p className="max-w-xs text-center text-xs text-brand-dark/55">
+                    This uses your fridge, diet settings, and AI ranking. May take a few seconds.
+                  </p>
+                </div>
+              )}
+
+              {!aiLoading && aiResults !== null && (
+                <div className="space-y-4">
+                  {aiError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                      {aiError}
+                    </div>
+                  )}
+                  {filtersSummaryLine(aiMeta?.filters) && (
+                    <p className="text-xs text-brand-dark/60">{filtersSummaryLine(aiMeta.filters)}</p>
+                  )}
+                  {aiMeta?.strategy && aiResults.length > 0 && (
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-dark/45">
+                      {formatApiStrategyShort(aiMeta.strategy)}
+                      {aiMeta.candidateCount != null && aiMeta.candidateCount > 0 && (
+                        <span className="ml-2 normal-case">
+                          · {aiMeta.candidateCount} candidates
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {aiResults.length === 0 && !aiError && (
+                    <p className="text-sm text-brand-dark/70">
+                      No recipes matched. Try different cuisine or time, or add more to your fridge.
+                    </p>
+                  )}
+                  {aiResults.length > 0 && (
+                    <ul className="grid gap-3 sm:grid-cols-1">
+                      {aiResults.map((r, idx) => {
+                        const gen = isGeneratedRecipe(r);
+                        const missing = Array.isArray(r.missingIngredients)
+                          ? r.missingIngredients.length
+                          : 0;
+                        const matched = Array.isArray(r.matchedIngredients)
+                          ? r.matchedIngredients.length
+                          : 0;
+                        const thumb = r.strMealThumb || '';
+                        const reason = r.personalization?.reason;
+                        const usedN = Array.isArray(r.usedFromFridge) ? r.usedFromFridge.length : 0;
+                        const pantryN = Array.isArray(r.optionalPantry) ? r.optionalPantry.length : 0;
+                        const title = gen ? r.title || 'Recipe' : r.strMeal || r.title || 'Recipe';
+                        return (
+                          <li
+                            key={`ai-${gen ? `g-${idx}-${title}` : r.idMeal || r.strMeal || idx}`}
+                            className="flex gap-3 rounded-xl border border-black/10 bg-[#F7F7F2]/80 p-3"
+                          >
+                            <div className="h-20 w-24 shrink-0 overflow-hidden rounded-lg bg-black/5">
+                              {thumb ? (
+                                <img
+                                  src={thumb}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex h-full items-center justify-center">
+                                  <ChefHat className="h-8 w-8 text-brand-dark/25" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="line-clamp-2 text-sm font-bold text-brand-dark">{title}</h3>
+                              {gen && r.description && (
+                                <p className="mt-1 line-clamp-2 text-xs text-brand-dark/55">{r.description}</p>
+                              )}
+                              <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-semibold uppercase">
+                                {gen ? (
+                                  <>
+                                    {usedN > 0 && (
+                                      <span className="rounded-full bg-brand-green/15 px-2 py-0.5 text-brand-green">
+                                        {usedN} from fridge
+                                      </span>
+                                    )}
+                                    {pantryN > 0 && (
+                                      <span className="rounded-full bg-black/5 px-2 py-0.5 text-brand-dark/70">
+                                        +{pantryN} pantry
+                                      </span>
+                                    )}
+                                    {r.prepMinutes != null && (
+                                      <span className="rounded-full bg-black/5 px-2 py-0.5 text-brand-dark/70">
+                                        ~{r.prepMinutes} min
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="rounded-full bg-brand-green/15 px-2 py-0.5 text-brand-green">
+                                      {matched} matched
+                                    </span>
+                                    {missing > 0 && (
+                                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-red-900">
+                                        {missing} missing
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              {reason && (
+                                <p className="mt-2 line-clamp-3 text-xs text-brand-dark/70">
+                                  {reason}
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDetailRecipe({
+                                    ...r,
+                                    responseFilters: aiMeta?.filters || null,
+                                  });
+                                  setAiModalOpen(false);
+                                }}
+                                className="mt-2 text-xs font-semibold uppercase tracking-wide text-brand-green underline hover:no-underline"
+                              >
+                                View details
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <div className="flex flex-wrap gap-2 border-t border-black/10 pt-4">
+                    <button
+                      type="button"
+                      className="rounded-xl px-4 py-2 text-sm font-medium text-brand-dark/70 hover:bg-black/5"
+                      onClick={() => {
+                        setAiResults(null);
+                        setAiMeta(null);
+                        setAiError('');
+                      }}
+                    >
+                      New search
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl px-4 py-2 text-sm font-medium text-brand-dark/70 hover:bg-black/5"
+                      onClick={() => setAiModalOpen(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {detailRecipe && (
         <RecipeDetailModal recipe={detailRecipe} onClose={() => setDetailRecipe(null)} />
       )}
