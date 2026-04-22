@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import ProtectedRoute from '../../components/auth/ProtectedRoute';
 import AuthLayout from '../layouts/AuthLayout';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Landing from '../../pages/Landing';
@@ -31,7 +32,11 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    element: <DashboardLayout />,
+    element: (
+      <ProtectedRoute>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
     children: [
       {
         path: '/dashboard',

@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { login, register } from '../../services/authService';
+import { clearAuthSession } from '../../utils/authSession';
 
 const AuthPage = ({ initialTab = 'signin' }) => {
   const [activeTab, setActiveTab] = useState(
     initialTab === 'signup' ? 'signup' : 'signin',
   );
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    if (localStorage.getItem('accessToken')) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [navigate]);
 
   const isSignIn = activeTab === 'signin';
 
@@ -140,9 +148,17 @@ const SignInForm = () => {
       const refreshToken = data?.data?.refreshToken;
       const userId = data?.data?.user_id;
 
-      if (accessToken) {
-        localStorage.setItem('accessToken', accessToken);
+      if (!accessToken) {
+        clearAuthSession();
+        setErrors({
+          form:
+            data?.message ||
+            'Invalid response from server. Please try again.',
+        });
+        return;
       }
+
+      localStorage.setItem('accessToken', accessToken);
       if (refreshToken) {
         localStorage.setItem('refreshToken', refreshToken);
       }
@@ -157,6 +173,7 @@ const SignInForm = () => {
       navigate('/dashboard');
       return;
     } catch (error) {
+      clearAuthSession();
       console.error(error);
       const message =
         (error && error.message) ||
@@ -275,9 +292,17 @@ const SignUpForm = () => {
       const refreshToken = data?.data?.refreshToken;
       const userId = data?.data?.user_id;
 
-      if (accessToken) {
-        localStorage.setItem('accessToken', accessToken);
+      if (!accessToken) {
+        clearAuthSession();
+        setErrors({
+          form:
+            data?.message ||
+            'Invalid response from server. Please try again.',
+        });
+        return;
       }
+
+      localStorage.setItem('accessToken', accessToken);
       if (refreshToken) {
         localStorage.setItem('refreshToken', refreshToken);
       }
@@ -292,6 +317,7 @@ const SignUpForm = () => {
       navigate('/dashboard');
       return;
     } catch (error) {
+      clearAuthSession();
       console.error(error);
       const message =
         (error && error.message) ||

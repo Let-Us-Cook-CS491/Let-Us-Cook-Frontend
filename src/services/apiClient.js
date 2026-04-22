@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearAuthSession } from '../utils/authSession';
 
 const baseURL = import.meta.env.VITE_API_URL;
 
@@ -102,10 +103,7 @@ apiClient.interceptors.response.use(
       return apiClient(originalRequest);
     } catch (refreshErr) {
       processQueue(refreshErr, null);
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userId');
-      localStorage.removeItem('fridgeId');
+      clearAuthSession();
       return Promise.reject(refreshErr);
     } finally {
       isRefreshing = false;
