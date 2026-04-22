@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { logout } from '../../services/authService';
+import { clearAuthSession } from '../../utils/authSession';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -29,10 +30,7 @@ const SidebarNav = () => {
       // eslint-disable-next-line no-console
       console.error('Logout failed', error);
     } finally {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userId');
-      localStorage.removeItem('fridgeId');
+      clearAuthSession();
       navigate('/');
       setLoading(false);
     }
