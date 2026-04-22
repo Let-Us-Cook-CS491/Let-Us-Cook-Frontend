@@ -5,11 +5,8 @@ import { logout } from '../../services/authService';
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/my-fridge', label: 'My Fridge' },
-  { to: '/expiry/priority', label: 'Expiry Priority' },
-  { to: '/inventory-sync', label: 'Inventory Sync' },
   { to: '/recipes', label: 'Recipes' },
   { to: '/meal-plan', label: 'Meal Plan' },
-  { to: '/meal-reminders', label: 'Meal Reminders' },
   { to: '/groceries', label: 'Groceries' },
   { to: '/profile', label: 'Profile' },
 ];
@@ -35,6 +32,7 @@ const SidebarNav = () => {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('userId');
+      localStorage.removeItem('fridgeId');
       navigate('/');
       setLoading(false);
     }
@@ -43,9 +41,18 @@ const SidebarNav = () => {
   return (
     <aside className="w-64 bg-white border-r border-black/5 flex flex-col">
       <div className="px-6 py-6 border-b border-black/5">
-        <span className="block text-lg font-semibold text-brand-dark">
-          Let Us Cook
-        </span>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/assets/let-us-cook-pan.png"
+            alt=""
+            className="h-9 w-9 flex-shrink-0 rounded-lg object-contain ring-1 ring-black/10"
+            width={36}
+            height={36}
+          />
+          <span className="block text-lg font-semibold text-brand-dark">
+            Let Us Cook
+          </span>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">

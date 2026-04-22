@@ -6,11 +6,11 @@ const authHeaders = () => {
 };
 
 /**
- * @param {object} [params] - category, limit, skip, expiringInDays
+ * @param {object} [params] - category, limit, skip (offset for paging), expiringInDays
  */
 export const getFridgeItems = (params) =>
   request({
-    url: '/api/fridge/get-item',
+    url: '/fridge/get-item',
     method: 'GET',
     params,
     headers: authHeaders(),
@@ -21,7 +21,7 @@ export const getFridgeItems = (params) =>
  */
 export const addFridgeItem = (body) =>
   request({
-    url: '/api/fridge/add-item',
+    url: '/fridge/add-item',
     method: 'POST',
     body,
     headers: authHeaders(),
@@ -32,7 +32,7 @@ export const addFridgeItem = (body) =>
  */
 export const removeFridgeItem = (body) =>
   request({
-    url: '/api/fridge/remove-item',
+    url: '/fridge/remove-item',
     method: 'DELETE',
     body,
     headers: authHeaders(),
@@ -43,8 +43,31 @@ export const removeFridgeItem = (body) =>
  */
 export const updateFridgeItem = (body) =>
   request({
-    url: '/api/fridge/update-item',
+    url: '/fridge/update-item',
     method: 'PATCH',
+    body,
+    headers: authHeaders(),
+  });
+
+/**
+ * Create a one-time invite code for this fridge (~24h expiry). Owner only.
+ * @param {number|string} fridgeId
+ */
+export const createFridgeInvite = (fridgeId) =>
+  request({
+    url: `/fridge/${fridgeId}/invite`,
+    method: 'POST',
+    headers: authHeaders(),
+  });
+
+/**
+ * Join another user's fridge with an invite code (single use).
+ * @param {{ invite_code: string }} body
+ */
+export const joinFridgeByInvite = (body) =>
+  request({
+    url: '/fridge/join',
+    method: 'POST',
     body,
     headers: authHeaders(),
   });

@@ -2,11 +2,11 @@ import { request } from './apiClient';
 
 const uploadConfigPath = import.meta.env.VITE_RECEIPT_UPLOAD_CONFIG_PATH || '';
 const uploadPath =
-  import.meta.env.VITE_RECEIPT_UPLOAD_PATH || '/api/fridge/receipt';
+  import.meta.env.VITE_RECEIPT_UPLOAD_PATH || '/fridge/receipt';
 const uploadField =
   import.meta.env.VITE_RECEIPT_UPLOAD_FIELD || 'receipt';
 const approvalPath =
-  import.meta.env.VITE_RECEIPT_APPROVAL_PATH || '/api/fridge/receipt/confirm';
+  import.meta.env.VITE_RECEIPT_APPROVAL_PATH || '/fridge/receipt/confirm';
 
 const authHeaders = () => {
   const token = localStorage.getItem('accessToken');

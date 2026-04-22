@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import {
@@ -167,6 +170,11 @@ const normalizeUploadResponse = (payload) => {
       confidence: item?.confidence ?? item?.score ?? item?.probability ?? null,
       expiresOn,
       included: true,
+      location:
+        item?.location ??
+        item?.storage_location ??
+        item?.storageLocation ??
+        'pantry',
       raw: item,
     };
   });
@@ -220,6 +228,7 @@ const normalizeUploadResponse = (payload) => {
 };
 
 const ReceiptUpload = () => {
+  const navigate = useNavigate();
   const [configState, setConfigState] = useState({
     maxBytes: null,
     allowedTypes: null,
@@ -241,7 +250,6 @@ const ReceiptUpload = () => {
   const [approvalError, setApprovalError] = useState('');
   const [approvalResult, setApprovalResult] = useState(null);
   const [approving, setApproving] = useState(false);
-  const [location, setLocation] = useState('pantry');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -411,11 +419,6 @@ const ReceiptUpload = () => {
       return;
     }
 
-    if (!location) {
-      setApprovalError('Select a storage location.');
-      return;
-    }
-
     const missingExpiration = includedItems.filter((item) => !item.expiresOn);
     if (missingExpiration.length > 0) {
       setApprovalError(
@@ -448,7 +451,7 @@ const ReceiptUpload = () => {
             category: item.category,
             expiration_date: toUtcISOStringFromDateInput(item.expiresOn),
           },
-          location: location || 'pantry',
+          location: item.location || 'pantry',
         };
 
         try {
@@ -492,6 +495,12 @@ const ReceiptUpload = () => {
         message,
         data: results,
       });
+
+      if (totalFailed === 0) {
+        navigate('/my-fridge', {
+          state: { receiptItemsSaved: true },
+        });
+      }
     } catch (error) {
       setApprovalError(getErrorMessage(error));
     } finally {
@@ -520,15 +529,42 @@ const ReceiptUpload = () => {
         receiptMeta.receiptNumber),
   );
 
+  /** After backend responds, use fixed column height + scroll; before that, grow with content (e.g. receipt preview). */
+  const isReviewPhase = Boolean(uploadResult);
+
   return (
     <div className="min-h-screen bg-brand-green px-6 py-12 text-brand-dark">
-      <div className="mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-        <Card
-          title="Receipt Upload"
-          subtitle="Upload a receipt, review the extracted items, and confirm expiration dates before saving."
+      <div className="mx-auto grid w-full max-w-6xl items-stretch gap-8 lg:min-h-0 lg:grid-cols-[1.2fr_0.8fr]">
+        <div
+          className={clsx(
+            'flex min-h-0 flex-col',
+            isReviewPhase
+              ? 'lg:h-[min(100vh-7rem,56rem)]'
+              : 'lg:h-auto',
+          )}
         >
-          <div className="space-y-8">
-            <div className="rounded-2xl border border-brand-khaki/60 bg-white/70 p-6">
+          <Card
+            className={clsx(
+              'min-h-0 flex-col overflow-hidden',
+              isReviewPhase ? 'flex-1 lg:h-full' : 'h-auto',
+            )}
+            title="Receipt Upload"
+            subtitle="Upload a receipt, review the extracted items, and confirm expiration dates before saving."
+          >
+            <div
+              className={clsx(
+                'flex min-h-0 flex-col gap-8',
+                isReviewPhase && 'min-h-0 flex-1',
+              )}
+            >
+              <div
+                className={clsx(
+                  'flex flex-col rounded-2xl border border-brand-khaki/60 bg-white/70 p-6',
+                  isReviewPhase
+                    ? 'min-h-0 flex-1 overflow-y-auto'
+                    : 'h-auto min-h-0 overflow-hidden',
+                )}
+              >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.3em] text-brand-dark/50">
@@ -548,7 +584,10 @@ const ReceiptUpload = () => {
                 )}
               </div>
 
-              <form className="mt-5 space-y-5" onSubmit={handleUpload}>
+              <form
+                className="mt-5 min-h-0 space-y-5"
+                onSubmit={handleUpload}
+              >
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-brand-dark">
                     Receipt photo
@@ -586,9 +625,9 @@ const ReceiptUpload = () => {
                 </div>
 
                 {selectedFile && (
-                  <div className="rounded-xl border border-brand-khaki/60 bg-white/80 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
+                  <div className="min-h-0 overflow-hidden rounded-xl border border-brand-khaki/60 bg-white/80 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold text-brand-dark">
                           {selectedFile.name}
                         </p>
@@ -596,20 +635,24 @@ const ReceiptUpload = () => {
                           {formatBytes(selectedFile.size)}
                         </p>
                       </div>
-                      <Button
+                      <button
                         type="button"
-                        className="bg-transparent border border-brand-brown text-brand-brown hover:bg-brand-brown hover:text-brand-beige"
+                        title="Remove file"
+                        aria-label="Remove file"
                         onClick={handleStartOver}
+                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-brand-brown/40 text-brand-brown transition-colors hover:bg-brand-brown hover:text-brand-beige"
                       >
-                        Remove
-                      </Button>
+                        <Trash2 className="h-4 w-4" strokeWidth={2} />
+                      </button>
                     </div>
                     {previewUrl && (
-                      <img
-                        src={previewUrl}
-                        alt="Receipt preview"
-                        className="mt-4 w-full rounded-lg border border-brand-khaki/50 object-cover"
-                      />
+                      <div className="mt-4 flex max-h-64 w-full justify-center overflow-hidden rounded-lg border border-brand-khaki/50 bg-white">
+                        <img
+                          src={previewUrl}
+                          alt="Receipt preview"
+                          className="max-h-64 w-full object-contain object-center"
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -626,20 +669,16 @@ const ReceiptUpload = () => {
                   </p>
                 )}
 
-                {uploadResult && (
-                  <div className="rounded-lg border border-brand-khaki/60 bg-brand-beige/80 px-3 py-2 text-sm text-brand-dark">
-                    {successMessage}
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button
-                    type="submit"
-                    className="w-full rounded-xl py-3 text-base font-semibold"
-                    disabled={uploading}
-                  >
-                    {uploading ? 'Uploading...' : 'Send to Backend'}
-                  </Button>
+                  {!uploadResult && (
+                    <Button
+                      type="submit"
+                      className="w-full rounded-xl py-3 text-base font-semibold"
+                      disabled={uploading}
+                    >
+                      {uploading ? 'Uploading...' : 'Send to Backend'}
+                    </Button>
+                  )}
                   {uploadResult && (
                     <Button
                       type="button"
@@ -651,95 +690,159 @@ const ReceiptUpload = () => {
                   )}
                 </div>
               </form>
+              </div>
             </div>
+          </Card>
+        </div>
 
-            {uploadResult && (
-              <form className="space-y-6" onSubmit={handleApprove}>
-                <div className="rounded-2xl border border-brand-khaki/60 bg-white/70 p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-brand-dark/50">
-                        Step 2
-                      </p>
-                      <h3 className="mt-2 text-lg font-semibold text-brand-dark">
-                        Review extracted items
-                      </h3>
-                      <p className="text-sm text-brand-dark/70">
-                        Confirm the items we found and set an expiration date for
-                        each one.
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-brand-beige px-3 py-1 text-xs font-semibold text-brand-dark">
-                      {includedCount} selected
-                    </span>
+        <div
+          className={clsx(
+            'flex min-h-0 flex-col overflow-hidden rounded-3xl border border-white/20 bg-brand-dark/90 text-brand-beige shadow-xl',
+            isReviewPhase
+              ? 'lg:h-[min(100vh-7rem,56rem)]'
+              : 'lg:h-auto',
+          )}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            {!uploadResult ? (
+            <div className="space-y-6">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-brand-khaki/80">
+                  Receipt Workflow
+                </p>
+                <h2 className="mt-2 text-2xl font-black uppercase italic text-brand-beige sm:text-3xl">
+                  From scan to fridge
+                </h2>
+              </div>
+              <p className="text-sm text-brand-beige/80">
+                Upload a clean photo, review what the backend extracted, and set
+                expirations so your fridge stays accurate.
+              </p>
+              <div className="space-y-3">
+                <div className="rounded-2xl bg-brand-green/40 p-4 text-sm text-brand-beige/90">
+                  <p className="text-xs uppercase tracking-[0.3em] text-brand-khaki/80">
+                    Step checklist
+                  </p>
+                  <div className="mt-3 space-y-2 text-xs text-brand-beige/80">
+                    <div>1. Upload the receipt image.</div>
+                    <div>2. Confirm each item and add an expiration date.</div>
+                    <div>3. Approve to save into your fridge.</div>
                   </div>
+                </div>
+                <div className="rounded-2xl border border-brand-khaki/30 bg-brand-dark/60 p-4 text-xs text-brand-beige/70">
+                  Upload settings
+                  <div className="mt-2 space-y-1 text-xs text-brand-beige/80">
+                    <div>
+                      <span className="font-semibold">Max size:</span>{' '}
+                      {maxSizeLabel || 'Server-controlled'}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Accepted:</span>{' '}
+                      {allowedTypesLabel}
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-brand-dark/70 p-4 text-xs text-brand-beige/70">
+                  <p className="font-semibold text-brand-beige">Photo tips</p>
+                  <div className="mt-2 space-y-1">
+                    <div>Capture the full receipt and keep it flat.</div>
+                    <div>Make sure dates and line items are sharp.</div>
+                    <div>Avoid glare and heavy shadows.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <form className="space-y-5" onSubmit={handleApprove}>
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-brand-khaki/80">
+                  Receipt Workflow
+                </p>
+                <h2 className="mt-2 text-xl font-black uppercase italic text-brand-beige sm:text-2xl">
+                  Review &amp; save
+                </h2>
+                <p className="mt-2 text-sm text-brand-beige/80">
+                  Backend response — confirm items and expirations below.
+                </p>
+              </div>
 
-                  {hasReceiptMeta && (
+              <div className="rounded-2xl border border-brand-khaki/40 bg-brand-beige/20 p-4 text-sm text-brand-beige/95">
+                {successMessage}
+              </div>
+
+              <div className="rounded-2xl border border-brand-khaki/60 bg-white/95 p-5 text-brand-dark shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-brand-dark/50">
+                      Step 2
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-brand-dark">
+                      Review extracted items
+                    </h3>
+                    <p className="text-sm text-brand-dark/70">
+                      Confirm the items we found and set an expiration date for
+                      each one.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-brand-beige px-3 py-1 text-xs font-semibold text-brand-dark">
+                    {includedCount} selected
+                  </span>
+                </div>
+
+                {hasReceiptMeta && (
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
                       <span className="font-semibold text-brand-dark">
                         Vendor:
-                        </span>{' '}
-                        {receiptMeta.vendor || 'Not provided'}
-                      </div>
-                      <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
-                        <span className="font-semibold text-brand-dark">
-                          Purchase date:
-                        </span>{' '}
-                        {receiptMeta.purchaseDate || 'Not provided'}
-                      </div>
-                      <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
-                        <span className="font-semibold text-brand-dark">
-                          Total:
-                        </span>{' '}
-                        {receiptMeta.total
-                          ? formatMoney(receiptMeta.total, receiptMeta.currency)
-                          : 'Not provided'}
-                      </div>
-                      <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
-                        <span className="font-semibold text-brand-dark">
-                          Receipt ID:
-                        </span>{' '}
-                        {receiptId || receiptMeta.receiptNumber || 'Not provided'}
-                      </div>
+                      </span>{' '}
+                      {receiptMeta.vendor || 'Not provided'}
                     </div>
-                  )}
-
-                  <div className="mt-5 rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
-                    <label className="block text-xs font-semibold text-brand-dark">
-                      Storage location
-                    </label>
-                    <select
-                      value={location}
-                      onChange={(event) => setLocation(event.target.value)}
-                      className="mt-2 h-10 w-full rounded-lg border border-brand-khaki/60 bg-white px-3 text-sm text-brand-dark outline-none focus:border-brand-brown focus:ring-2 focus:ring-brand-khaki/40"
-                    >
-                      <option value="pantry">Pantry</option>
-                      <option value="fridge">Fridge</option>
-                      <option value="freezer">Freezer</option>
-                    </select>
+                    <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
+                      <span className="font-semibold text-brand-dark">
+                        Purchase date:
+                      </span>{' '}
+                      {receiptMeta.purchaseDate || 'Not provided'}
+                    </div>
+                    <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
+                      <span className="font-semibold text-brand-dark">
+                        Total:
+                      </span>{' '}
+                      {receiptMeta.total
+                        ? formatMoney(receiptMeta.total, receiptMeta.currency)
+                        : 'Not provided'}
+                    </div>
+                    <div className="rounded-xl border border-brand-khaki/50 bg-white px-3 py-2 text-xs text-brand-dark/70">
+                      <span className="font-semibold text-brand-dark">
+                        Receipt ID:
+                      </span>{' '}
+                      {receiptId || receiptMeta.receiptNumber || 'Not provided'}
+                    </div>
                   </div>
+                )}
 
-                  {extractedItems.length === 0 ? (
-                    <div className="mt-6 rounded-xl border border-brand-khaki/50 bg-brand-beige/60 px-4 py-3 text-sm text-brand-dark/80">
-                      We did not detect any line items yet. Upload a clearer photo
-                      or continue once the backend returns items.
-                    </div>
-                  ) : (
-                    <div className="mt-6 space-y-3">
-                      {extractedItems.map((item) => {
-                        const confidenceLabel = formatConfidence(item.confidence);
-                        const quantityLabel = `${item.quantity || ''} ${
-                          item.unit || ''
-                        }`.trim();
+                {extractedItems.length === 0 ? (
+                  <div className="mt-6 rounded-xl border border-brand-khaki/50 bg-brand-beige/60 px-4 py-3 text-sm text-brand-dark/80">
+                    We did not detect any line items yet. Upload a clearer photo
+                    or continue once the backend returns items.
+                  </div>
+                ) : (
+                  <div className="mt-6 space-y-3">
+                    {extractedItems.map((item) => {
+                      const confidenceLabel = formatConfidence(item.confidence);
+                      const quantityLabel = `${item.quantity || ''} ${
+                        item.unit || ''
+                      }`.trim();
 
-                        return (
-                          <div
-                            key={item.id}
-                            className="rounded-xl border border-brand-khaki/60 bg-white p-4"
-                          >
-                            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                              <div className="flex-1">
+                      return (
+                        <div
+                          key={item.id}
+                          className={`rounded-xl border border-brand-khaki/60 bg-white p-4 ${
+                            !item.included ? 'opacity-70' : ''
+                          }`}
+                        >
+                          <div className="flex flex-col gap-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-sm font-semibold text-brand-dark">
                                     {item.name}
@@ -764,8 +867,57 @@ const ReceiptUpload = () => {
                                   {quantityLabel || 'Quantity not provided'}
                                 </div>
                               </div>
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                <label className="text-xs font-semibold text-brand-dark/70">
+                              <button
+                                type="button"
+                                title={
+                                  item.included
+                                    ? 'Exclude from import'
+                                    : 'Include again'
+                                }
+                                aria-label={
+                                  item.included
+                                    ? 'Exclude from import'
+                                    : 'Include again'
+                                }
+                                onClick={() =>
+                                  updateItem(item.id, {
+                                    included: !item.included,
+                                  })
+                                }
+                                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-brand-brown/40 text-brand-brown transition-colors hover:bg-brand-brown hover:text-brand-beige"
+                              >
+                                {item.included ? (
+                                  <Trash2 className="h-4 w-4" strokeWidth={2} />
+                                ) : (
+                                  <RotateCcw
+                                    className="h-4 w-4"
+                                    strokeWidth={2}
+                                  />
+                                )}
+                              </button>
+                            </div>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                              <div className="min-w-[140px] flex-1">
+                                <label className="block text-xs font-semibold text-brand-dark/70">
+                                  Storage location
+                                </label>
+                                <select
+                                  value={item.location || 'pantry'}
+                                  disabled={!item.included}
+                                  onChange={(event) =>
+                                    updateItem(item.id, {
+                                      location: event.target.value,
+                                    })
+                                  }
+                                  className="mt-1.5 h-10 w-full rounded-lg border border-brand-khaki/60 bg-white px-3 text-sm text-brand-dark outline-none focus:border-brand-brown focus:ring-2 focus:ring-brand-khaki/40 disabled:bg-brand-beige/50 disabled:text-brand-dark/50"
+                                >
+                                  <option value="pantry">Pantry</option>
+                                  <option value="fridge">Fridge</option>
+                                  <option value="freezer">Freezer</option>
+                                </select>
+                              </div>
+                              <div className="min-w-[140px] flex-1">
+                                <label className="block text-xs font-semibold text-brand-dark/70">
                                   Expiration date
                                 </label>
                                 <input
@@ -777,149 +929,70 @@ const ReceiptUpload = () => {
                                       expiresOn: event.target.value,
                                     })
                                   }
-                                  className="h-10 rounded-lg border border-brand-khaki/60 bg-white px-3 text-sm text-brand-dark outline-none focus:border-brand-brown focus:ring-2 focus:ring-brand-khaki/40 disabled:bg-brand-beige/50 disabled:text-brand-dark/50"
+                                  className="mt-1.5 h-10 w-full rounded-lg border border-brand-khaki/60 bg-white px-3 text-sm text-brand-dark outline-none focus:border-brand-brown focus:ring-2 focus:ring-brand-khaki/40 disabled:bg-brand-beige/50 disabled:text-brand-dark/50"
                                 />
                               </div>
-                              <Button
-                                type="button"
-                                className="bg-transparent border border-brand-brown text-brand-brown hover:bg-brand-brown hover:text-brand-beige"
-                                onClick={() =>
-                                  updateItem(item.id, {
-                                    included: !item.included,
-                                  })
-                                }
-                              >
-                                {item.included ? 'Remove' : 'Restore'}
-                              </Button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-brand-khaki/60 bg-white/95 p-5 text-brand-dark shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-brand-dark/50">
+                      Step 3
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-brand-dark">
+                      Approve and save
+                    </h3>
+                    <p className="text-sm text-brand-dark/70">
+                      We&apos;ll send your confirmations to the backend so the
+                      items appear in My Fridge.
+                    </p>
+                  </div>
+                  {approving && (
+                    <span className="rounded-full bg-brand-green/15 px-3 py-1 text-xs font-semibold text-brand-dark">
+                      Saving...
+                    </span>
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-brand-khaki/60 bg-white/70 p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-brand-dark/50">
-                        Step 3
-                      </p>
-                      <h3 className="mt-2 text-lg font-semibold text-brand-dark">
-                        Approve and save
-                      </h3>
-                      <p className="text-sm text-brand-dark/70">
-                        We&apos;ll send your confirmations to the backend so the
-                        items appear in My Fridge.
-                      </p>
-                    </div>
-                    {approving && (
-                      <span className="rounded-full bg-brand-green/15 px-3 py-1 text-xs font-semibold text-brand-dark">
-                        Saving...
-                      </span>
+                {approvalError && (
+                  <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {approvalError}
+                  </p>
+                )}
+
+                {approvalResult && (
+                  <div className="mt-4 rounded-lg border border-brand-khaki/60 bg-brand-beige/80 px-3 py-2 text-sm text-brand-dark">
+                    {approvalMessage}
+                    {approvalResult?.data?.failed?.length > 0 && (
+                      <div className="mt-2 text-xs text-brand-brown">
+                        {approvalResult.data.failed.map((failure, index) => (
+                          <div key={`${failure.name || 'item'}-${index}`}>
+                            {failure.name || 'Item'}: {failure.error || 'Failed'}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
+                )}
 
-                  {approvalError && (
-                    <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {approvalError}
-                    </p>
-                  )}
-
-                  {approvalResult && (
-                    <div className="mt-4 rounded-lg border border-brand-khaki/60 bg-brand-beige/80 px-3 py-2 text-sm text-brand-dark">
-                      {approvalMessage}
-                      {approvalResult?.data?.failed?.length > 0 && (
-                        <div className="mt-2 text-xs text-brand-brown">
-                          {approvalResult.data.failed.map((failure, index) => (
-                            <div key={`${failure.name || 'item'}-${index}`}>
-                              {failure.name || 'Item'}: {failure.error || 'Failed'}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <Button
-                    type="submit"
-                    className="mt-4 w-full rounded-xl py-3 text-base font-semibold"
-                    disabled={approving || extractedItems.length === 0}
-                  >
-                    {approving ? 'Saving...' : 'Approve & Save Items'}
-                  </Button>
-                </div>
-              </form>
-            )}
-          </div>
-        </Card>
-
-        <div className="rounded-3xl border border-white/20 bg-brand-dark/90 p-8 text-brand-beige shadow-xl">
-          <div className="space-y-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-brand-khaki/80">
-                Receipt Workflow
-              </p>
-              <h2 className="mt-2 text-3xl font-black uppercase italic text-brand-beige">
-                From scan to fridge
-              </h2>
-            </div>
-            <p className="text-sm text-brand-beige/80">
-              Upload a clean photo, review what the backend extracted, and set
-              expirations so your fridge stays accurate.
-            </p>
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-brand-green/40 p-4 text-sm text-brand-beige/90">
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-khaki/80">
-                  Step checklist
-                </p>
-                <div className="mt-3 space-y-2 text-xs text-brand-beige/80">
-                  <div>1. Upload the receipt image.</div>
-                  <div>2. Confirm each item and add an expiration date.</div>
-                  <div>3. Approve to save into your fridge.</div>
-                </div>
+                <Button
+                  type="submit"
+                  className="mt-4 w-full rounded-xl py-3 text-base font-semibold"
+                  disabled={approving || extractedItems.length === 0}
+                >
+                  {approving ? 'Saving...' : 'Approve & Save Items'}
+                </Button>
               </div>
-              <div className="rounded-2xl border border-brand-khaki/30 bg-brand-dark/60 p-4 text-xs text-brand-beige/70">
-                Upload settings
-                <div className="mt-2 space-y-1 text-xs text-brand-beige/80">
-                  <div>
-                    <span className="font-semibold">Max size:</span>{' '}
-                    {maxSizeLabel || 'Server-controlled'}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Accepted:</span>{' '}
-                    {allowedTypesLabel}
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-2xl bg-brand-dark/70 p-4 text-xs text-brand-beige/70">
-                <p className="font-semibold text-brand-beige">Photo tips</p>
-                <div className="mt-2 space-y-1">
-                  <div>Capture the full receipt and keep it flat.</div>
-                  <div>Make sure dates and line items are sharp.</div>
-                  <div>Avoid glare and heavy shadows.</div>
-                </div>
-              </div>
-            </div>
-            {uploadResult && (
-              <div className="rounded-2xl border border-brand-khaki/30 bg-brand-dark/70 p-4 text-xs text-brand-beige/80">
-                Latest upload
-                <div className="mt-2 space-y-1">
-                  <div>
-                    <span className="font-semibold">Items detected:</span>{' '}
-                    {extractedItems.length || 'Pending'}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Selected:</span>{' '}
-                    {includedCount}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Receipt ID:</span>{' '}
-                    {receiptId || receiptMeta?.receiptNumber || 'Pending'}
-                  </div>
-                </div>
-              </div>
-            )}
+            </form>
+          )}
           </div>
         </div>
       </div>
