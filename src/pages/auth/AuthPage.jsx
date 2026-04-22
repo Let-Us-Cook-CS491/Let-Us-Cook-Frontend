@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
+import { login, register } from '../../services/authService';
 
 const AuthPage = ({ initialTab = 'signin' }) => {
   const [activeTab, setActiveTab] = useState(
@@ -20,68 +21,68 @@ const AuthPage = ({ initialTab = 'signin' }) => {
 
   return (
     <Card>
-      <div className="mb-6 flex items-center justify-center">
-        <div className="inline-flex w-full max-w-sm rounded-full bg-brand-beige/60 p-1">
-          <button
-            type="button"
-            onClick={() => handleTabChange('signin')}
-            className={`flex-1 rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
-              isSignIn
-                ? 'bg-brand-beige text-brand-dark border border-brand-dark shadow-sm'
-                : 'bg-transparent text-brand-dark/75 hover:text-brand-dark'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('signup')}
-            className={`flex-1 rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
-              !isSignIn
-                ? 'bg-brand-beige text-brand-dark border border-brand-dark shadow-sm'
-                : 'bg-transparent text-brand-dark/75 hover:text-brand-dark'
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-6 space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-brand-dark">
-          Welcome to Let Us Cook
-        </h1>
-        <p className="text-sm text-brand-dark/70">
-          {isSignIn
-            ? 'Sign in to your account or create a new one.'
-            : 'Create your account to start planning smarter meals.'}
-        </p>
-      </div>
-
-      <div className="relative overflow-hidden">
-        <div
-          className={`flex w-[200%] transition-transform duration-300 ease-out ${
-            isSignIn ? 'translate-x-0' : '-translate-x-1/2'
-          }`}
-        >
-          <div className="w-1/2 pr-3">
-            <SignInForm />
-          </div>
-
-          <div className="w-1/2 pl-3">
-            <SignUpForm />
+      <div className="flex flex-col items-center w-full">
+        <div className="mb-6 flex w-full justify-center">
+          <div className="inline-flex w-full max-w-sm rounded-full bg-brand-beige/60 p-1">
+            <button
+              type="button"
+              onClick={() => handleTabChange('signin')}
+              className={`flex-1 rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
+                isSignIn
+                  ? 'bg-brand-beige text-brand-dark border border-brand-dark shadow-sm'
+                  : 'bg-transparent text-brand-dark/75 hover:text-brand-dark'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange('signup')}
+              className={`flex-1 rounded-full px-6 py-2.5 text-sm font-medium transition-colors ${
+                !isSignIn
+                  ? 'bg-brand-beige text-brand-dark border border-brand-dark shadow-sm'
+                  : 'bg-transparent text-brand-dark/75 hover:text-brand-dark'
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
         </div>
-      </div>
 
-      <div className="mt-6 flex justify-center">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-brand-dark/80 hover:text-brand-dark"
-        >
-          <span className="text-base">←</span>
-          <span>Back to Home</span>
-        </Link>
+        <div className="mb-6 space-y-1 text-center max-w-sm w-full">
+          <h1 className="text-2xl font-semibold text-brand-dark">
+            {isSignIn ? 'Welcome back, chef!' : 'Create your account'}
+          </h1>
+          <p className="text-sm text-brand-dark/70">
+            {isSignIn
+              ? 'Sign in to your account or create a new one.'
+              : 'Start planning smarter meals with what’s already in your fridge.'}
+          </p>
+        </div>
+
+        <div className="w-full max-w-sm">
+          <div key={activeTab} className="animate-auth-fade-in w-full">
+            {isSignIn ? <SignInForm /> : <SignUpForm />}
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-center">
+          <img
+            src="/assets/let-us-cook-pan.png"
+            alt="Let Us Cook pan illustration"
+            className="h-16 w-auto opacity-90"
+          />
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm font-medium text-brand-dark/80 hover:text-brand-dark"
+          >
+            <span className="text-base">←</span>
+            <span>Back to Home</span>
+          </Link>
+        </div>
       </div>
     </Card>
   );
@@ -94,6 +95,7 @@ const SignInForm = () => {
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleChange = (event) => {
     setFormValues((prev) => ({
@@ -126,18 +128,48 @@ const SignInForm = () => {
     setLoading(true);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      console.log('Sign in values:', formValues);
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      const data = await login({
+        email: formValues.email,
+        password: formValues.password,
+        time_zone: timeZone,
+      });
+
+      const accessToken = data?.data?.accessToken;
+      const refreshToken = data?.data?.refreshToken;
+      const userId = data?.data?.user_id;
+
+      if (accessToken) {
+        localStorage.setItem('accessToken', accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      if (userId) {
+        localStorage.setItem('userId', String(userId));
+      }
+      const fridgeId = data?.data?.fridge_id;
+      if (fridgeId != null) {
+        localStorage.setItem('fridgeId', String(fridgeId));
+      }
+
+      navigate('/dashboard');
+      return;
     } catch (error) {
       console.error(error);
-      setErrors({ form: 'Something went wrong. Please try again.' });
+      const message =
+        (error && error.message) ||
+        (error && error.error) ||
+        'Something went wrong. Please try again.';
+      setErrors({ form: message });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-6" onSubmit={handleSubmit}>
       {errors.form && (
         <p className="text-sm text-red-600">{errors.form}</p>
       )}
@@ -165,6 +197,10 @@ const SignInForm = () => {
       <Button type="submit" disabled={loading} className="mt-2 w-full">
         {loading ? 'Signing in...' : 'Sign In'}
       </Button>
+
+      <p className="text-xs text-center text-brand-dark/70 mt-2">
+        Plan smarter meals with what&apos;s already in your fridge.
+      </p>
     </form>
   );
 };
@@ -175,8 +211,10 @@ const SignUpForm = () => {
     email: '',
     password: '',
     confirmPassword: '',
+    gender: 'other',
   });
   const [errors, setErrors] = useState({});
+  const navigate = useNavigate();
 
   const handleChange = (event) => {
     setFormValues((prev) => ({
@@ -219,10 +257,47 @@ const SignUpForm = () => {
     if (!validate()) return;
 
     try {
-      console.log('Sign up values:', formValues);
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      const payload = {
+        full_name: formValues.fullName,
+        email: formValues.email,
+        password: formValues.password,
+        // Temporary placeholder until phone field is added back
+        phone_number: '0000000000',
+        gender: formValues.gender,
+        time_zone: timeZone,
+      };
+
+      const data = await register(payload);
+
+      const accessToken = data?.data?.accessToken;
+      const refreshToken = data?.data?.refreshToken;
+      const userId = data?.data?.user_id;
+
+      if (accessToken) {
+        localStorage.setItem('accessToken', accessToken);
+      }
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      if (userId) {
+        localStorage.setItem('userId', String(userId));
+      }
+      const fridgeId = data?.data?.fridge_id;
+      if (fridgeId != null) {
+        localStorage.setItem('fridgeId', String(fridgeId));
+      }
+
+      navigate('/dashboard');
+      return;
     } catch (error) {
       console.error(error);
-      setErrors({ form: 'Something went wrong. Please try again.' });
+      const message =
+        (error && error.message) ||
+        (error && error.error) ||
+        'Something went wrong. Please try again.';
+      setErrors({ form: message });
     }
   };
 
@@ -252,6 +327,22 @@ const SignUpForm = () => {
         error={errors.email}
       />
 
+      <div className="space-y-1">
+        <label className="block text-sm font-medium text-gray-700">
+          Gender
+        </label>
+        <select
+          name="gender"
+          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          value={formValues.gender}
+          onChange={handleChange}
+        >
+          <option value="female">Female</option>
+          <option value="male">Male</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
       <Input
         label="Password"
         name="password"
@@ -269,7 +360,13 @@ const SignUpForm = () => {
         autoComplete="new-password"
         value={formValues.confirmPassword}
         onChange={handleChange}
-        error={errors.confirmPassword}
+        error={
+          errors.confirmPassword ||
+          (formValues.confirmPassword &&
+          formValues.confirmPassword !== formValues.password
+            ? 'Passwords do not match'
+            : undefined)
+        }
       />
 
       <Button type="submit" className="mt-2 w-full">
