@@ -71,3 +71,11 @@ export const joinFridgeByInvite = (body) =>
     body,
     headers: authHeaders(),
   });
+
+/** GET /api/fridge/dashboard — metrics + expiring_items for dashboard UI */
+export const getFridgeDashboard = () =>
+  request({
+    url: '/fridge/dashboard',
+    method: 'GET',
+    headers: authHeaders(),
+  });

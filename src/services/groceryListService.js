@@ -39,6 +39,18 @@ export const addItemsToGroceryList = (listId, items) =>
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
   });
 
+/**
+ * POST /api/grocery/lists/:listId/missing-ingredients
+ * Body: { sourceSurface, recipeId, recipeTitle?, mode, ingredients }
+ */
+export const postMissingIngredientsToList = (listId, body) =>
+  request({
+    url: `${base}/${encodeURIComponent(listId)}/missing-ingredients`,
+    method: 'POST',
+    body,
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+  });
+
 export const patchItemPurchase = (listId, itemId, purchased) =>
   request({
     url: `${base}/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/purchase`,
