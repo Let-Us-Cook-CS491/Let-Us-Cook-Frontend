@@ -1128,7 +1128,11 @@ const Recipes = () => {
       )}
 
       {detailRecipe && (
-        <RecipeDetailModal recipe={detailRecipe} onClose={() => setDetailRecipe(null)} />
+        <RecipeDetailModal
+          recipe={detailRecipe}
+          sourceSurface={activeTab === 'browse' ? 'browse' : 'suggest'}
+          onClose={() => setDetailRecipe(null)}
+        />
       )}
     </div>
   );

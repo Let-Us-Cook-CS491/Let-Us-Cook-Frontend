@@ -1,6 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChefHat } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { X, ChefHat, Loader2, Plus } from 'lucide-react';
+import { postMissingIngredientsToList } from '../../services/groceryListService';
+import { getWeekPlan, postWeekSlotFromRecipe } from '../../services/mealPlanService';
+
+/** Same key as `Groceries.jsx` */
+const GROCERY_SELECTED_LIST_KEY = 'grocery_selected_list_id';
 
 function isBrowseShape(r) {
   return r && r._id != null && r.title != null;
@@ -79,10 +86,127 @@ function labelFromIng(raw) {
   return String(raw ?? '');
 }
 
+const addDays = (date, days) => {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+};
+
+/** Monday-start week (matches `MealPlan.jsx`). */
+const startOfWeek = (date) => {
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  return addDays(date, offset);
+};
+
+function formatLocalYMD(d) {
+  const x = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function weekDateOptions(weekStartDate) {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(weekStartDate, i);
+    return {
+      ymd: formatLocalYMD(d),
+      label: d.toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      }),
+    };
+  });
+}
+
+function readSelectedGroceryListId() {
+  try {
+    return sessionStorage.getItem(GROCERY_SELECTED_LIST_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function recipeIdForMissing(recipe, browse) {
+  if (browse) return String(recipe._id ?? '').trim();
+  return String(recipe.idMeal ?? recipe.id ?? recipe.recipeId ?? '').trim();
+}
+
+function buildRecipePayloadForPlan(recipe, browse) {
+  if (browse) {
+    return {
+      source: 'mongo',
+      recipe_id: String(recipe._id),
+      title: recipe.title || 'Recipe',
+      image_url: recipe.image_url || recipe.strMealThumb || '',
+      prep_minutes: Number(recipe.prep_minutes ?? recipe.prepMinutes ?? 30) || 30,
+      nutrition: recipe.nutrition,
+    };
+  }
+  const idMeal = String(recipe.idMeal ?? recipe.id ?? '').trim();
+  const payload = {
+    source: 'mealdb',
+    idMeal,
+    strMeal: recipe.strMeal || recipe.title || 'Recipe',
+    strMealThumb: recipe.strMealThumb || recipe.image_url || '',
+    nutrition: recipe.nutrition,
+  };
+  const est =
+    recipe.personalization?.cookMinutes ??
+    recipe.prep_minutes ??
+    recipe.prepMinutes;
+  if (est != null && Number.isFinite(Number(est))) {
+    payload.cookMinutesEstimate = Number(est);
+  }
+  return payload;
+}
+
+function apiErr(e) {
+  if (!e) return 'Something went wrong.';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  return 'Something went wrong.';
+}
+
 /**
- * @param {{ recipe: object | null, onClose: () => void }} props
+ * @param {{
+ *   recipe: object | null,
+ *   onClose: () => void,
+ *   sourceSurface?: 'suggest' | 'browse',
+ * }} props
  */
-const RecipeDetailModal = ({ recipe, onClose }) => {
+const RecipeDetailModal = ({
+  recipe,
+  onClose,
+  sourceSurface = 'suggest',
+}) => {
+  const [groceryMsg, setGroceryMsg] = useState('');
+  const [groceryErr, setGroceryErr] = useState('');
+  const [groceryLoading, setGroceryLoading] = useState(false);
+  const [singleIngLoading, setSingleIngLoading] = useState(null);
+  const [planMsg, setPlanMsg] = useState('');
+  const [planErr, setPlanErr] = useState('');
+  const [planLoading, setPlanLoading] = useState(false);
+  const [mealSlot, setMealSlot] = useState('dinner');
+  const [mealDateYmd, setMealDateYmd] = useState('');
+
+  useEffect(() => {
+    if (!recipe) return;
+    setGroceryMsg('');
+    setGroceryErr('');
+    setPlanMsg('');
+    setPlanErr('');
+    setSingleIngLoading(null);
+    const anchor = startOfWeek(new Date());
+    const opts = weekDateOptions(anchor);
+    const today = formatLocalYMD(new Date());
+    setMealDateYmd(opts.some((o) => o.ymd === today) ? today : opts[0].ymd);
+    setMealSlot('dinner');
+  }, [recipe]);
+
   useEffect(() => {
     if (!recipe) return undefined;
     const onKey = (e) => {
@@ -97,10 +221,18 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
     };
   }, [recipe, onClose]);
 
+  const weekAnchor = useMemo(() => startOfWeek(new Date()), [recipe]);
+  const weekOptions = useMemo(() => weekDateOptions(weekAnchor), [weekAnchor]);
+  const mealWeekStartYmd = useMemo(() => formatLocalYMD(weekAnchor), [weekAnchor]);
+
   if (!recipe) return null;
 
   const browse = isBrowseShape(recipe);
   const generated = isGeneratedAiRecipe(recipe);
+
+  const isAuthed =
+    typeof localStorage !== 'undefined' &&
+    Boolean(localStorage.getItem('accessToken'));
 
   const instructions = recipe.strInstructions || recipe.instructions || '';
 
@@ -123,6 +255,116 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
   const pers = recipe.personalization && typeof recipe.personalization === 'object' ? recipe.personalization : null;
 
   const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
+
+  const surface = sourceSurface === 'browse' ? 'browse' : 'suggest';
+  const rid = recipeIdForMissing(recipe, browse);
+  const recipeTitle = titleOf(recipe);
+  const missingLabels = missing.map((m) => labelFromIng(m)).filter(Boolean);
+  const listId = readSelectedGroceryListId();
+  const planRecipeBody = buildRecipePayloadForPlan(recipe, browse);
+  const canPostPlan =
+    browse && recipe._id
+      ? true
+      : Boolean(planRecipeBody.idMeal && String(planRecipeBody.idMeal).trim());
+
+  const postMissingBody = (mode, ingredients) => ({
+    sourceSurface: surface,
+    recipeId: rid,
+    recipeTitle,
+    mode,
+    ingredients,
+  });
+
+  const handleAddAllMissing = async () => {
+    if (!listId) {
+      setGroceryErr('Select a grocery list on the Groceries page first.');
+      return;
+    }
+    if (!rid || missingLabels.length === 0) return;
+    setGroceryLoading(true);
+    setGroceryErr('');
+    setGroceryMsg('');
+    try {
+      const res = await postMissingIngredientsToList(
+        listId,
+        postMissingBody('all', missingLabels),
+      );
+      if (res?.status !== 'OK') {
+        throw new Error(res?.message || 'Failed to add ingredients');
+      }
+      const msg = res.message || 'Added to grocery list.';
+      setGroceryMsg(msg);
+      toast.success('Added to grocery list', { description: msg });
+    } catch (e) {
+      setGroceryErr(apiErr(e));
+      toast.error(apiErr(e));
+    } finally {
+      setGroceryLoading(false);
+    }
+  };
+
+  const handleAddSingleMissing = async (ingredientName) => {
+    if (!listId) {
+      setGroceryErr('Select a grocery list on the Groceries page first.');
+      return;
+    }
+    if (!rid || !ingredientName) return;
+    setSingleIngLoading(ingredientName);
+    setGroceryErr('');
+    setGroceryMsg('');
+    try {
+      const res = await postMissingIngredientsToList(
+        listId,
+        postMissingBody('single', [ingredientName]),
+      );
+      if (res?.status !== 'OK') {
+        throw new Error(res?.message || 'Failed to add ingredient');
+      }
+      const msg = res.message || `${ingredientName} added to grocery list.`;
+      setGroceryMsg(msg);
+      toast.success('Added to grocery list', {
+        description: `${ingredientName} · ${msg}`,
+      });
+    } catch (e) {
+      setGroceryErr(apiErr(e));
+      toast.error(apiErr(e));
+    } finally {
+      setSingleIngLoading(null);
+    }
+  };
+
+  const handleAddToMealPlan = async () => {
+    if (!canPostPlan) {
+      setPlanErr('This recipe cannot be added to the meal plan (missing id).');
+      return;
+    }
+    setPlanLoading(true);
+    setPlanErr('');
+    setPlanMsg('');
+    try {
+      const ensure = await getWeekPlan({
+        weekStart: mealWeekStartYmd,
+        createIfMissing: true,
+      });
+      if (ensure?.status !== 'OK') {
+        throw new Error(ensure?.message || 'Could not load meal plan for this week');
+      }
+      const res = await postWeekSlotFromRecipe({
+        weekStart: mealWeekStartYmd,
+        date: mealDateYmd,
+        slot: mealSlot,
+        recipe: planRecipeBody,
+      });
+      if (res?.status !== 'OK') {
+        throw new Error(res?.message || 'Failed to add recipe to plan');
+      }
+      setPlanMsg(res.message || 'Recipe added to your meal plan.');
+    } catch (e) {
+      setPlanErr(apiErr(e));
+    } finally {
+      setPlanLoading(false);
+    }
+  };
 
   const modal = (
     <div
@@ -290,6 +532,13 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
               <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
                 Ingredients
               </h3>
+              {!generated && missingLabels.length > 0 && isAuthed && (
+                <p className="mt-1 text-[11px] leading-snug text-brand-dark/55">
+                  Tap <span className="font-semibold text-red-900">+</span> on a missing item to add it to your
+                  grocery list, or use <span className="font-medium text-brand-dark/70">Add all missing</span>{' '}
+                  below.
+                </p>
+              )}
               {generated ? (
                 <ul className="mt-2 space-y-1.5 text-sm text-brand-dark/90">
                   {browseIngs.map((ing, i) => (
@@ -310,10 +559,37 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
                       st === 'matched'
                         ? 'rounded-full border border-brand-green/25 bg-brand-green/15 px-2.5 py-1 text-xs font-medium text-brand-green'
                         : st === 'missing'
-                          ? 'rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-xs font-medium text-red-900'
+                          ? 'rounded-full border border-red-200 bg-red-100 px-2 py-1 text-xs font-medium text-red-900'
                           : 'rounded-full bg-black/5 px-2.5 py-1 text-xs font-medium text-brand-dark/75';
+                    if (st === 'missing' && isAuthed) {
+                      const busy = singleIngLoading === label;
+                      const disabled =
+                        busy || !listId || !rid || groceryLoading;
+                      return (
+                        <button
+                          key={`${label}-${i}`}
+                          type="button"
+                          disabled={disabled}
+                          title={
+                            !listId
+                              ? 'Select a grocery list on the Groceries page first'
+                              : `Add ${label} to grocery list`
+                          }
+                          aria-label={`Add ${label} to grocery list`}
+                          onClick={() => handleAddSingleMissing(label)}
+                          className={`${chipClass} inline-flex items-center gap-1 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45`}
+                        >
+                          {busy ? (
+                            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                          ) : (
+                            <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" aria-hidden />
+                          )}
+                          <span>{label}</span>
+                        </button>
+                      );
+                    }
                     return (
-                      <span key={i} className={chipClass}>
+                      <span key={`${label}-${i}`} className={chipClass}>
                         {label}
                       </span>
                     );
@@ -372,6 +648,112 @@ const RecipeDetailModal = ({ recipe, onClose }) => {
               </dl>
               {nutrition?.disclaimer && (
                 <p className="mt-2 text-[10px] leading-snug text-brand-dark/50">{nutrition.disclaimer}</p>
+              )}
+            </section>
+          )}
+
+          {!generated && (
+            <section className="mt-5 rounded-2xl border border-brand-green/25 bg-white/90 px-4 py-4 shadow-sm">
+              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-dark/45">
+                Groceries &amp; meal plan
+              </h3>
+              {!isAuthed && (
+                <p className="mt-2 text-sm text-brand-dark/70">
+                  <Link to="/signin" className="font-semibold text-brand-green underline">
+                    Sign in
+                  </Link>{' '}
+                  to add missing ingredients or assign this recipe to your week.
+                </p>
+              )}
+              {isAuthed && (
+                <div className="mt-3 space-y-4">
+                  {missingLabels.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-brand-dark">Grocery list</p>
+                      {!listId ? (
+                        <p className="mt-1 text-xs text-brand-dark/65">
+                          Open{' '}
+                          <Link to="/groceries" className="font-semibold text-brand-green underline">
+                            Groceries
+                          </Link>{' '}
+                          and select a list, then use <span className="font-medium">+</span> on red ingredients
+                          above or add everything here.
+                        </p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={groceryLoading || !listId || !rid}
+                          onClick={handleAddAllMissing}
+                          className="inline-flex items-center gap-2 rounded-xl bg-brand-dark px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {groceryLoading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : null}
+                          Add all missing to list
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t border-black/10 pt-3">
+                    <p className="text-xs font-semibold text-brand-dark">Add to this week&apos;s meal plan</p>
+                    <p className="mt-0.5 text-[10px] text-brand-dark/50">
+                      Week starts {mealWeekStartYmd} (same calendar week as Meal Planner).
+                    </p>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                      <label className="flex min-w-[140px] flex-1 flex-col text-[10px] font-bold uppercase tracking-wide text-brand-dark/50">
+                        Day
+                        <select
+                          className="mt-1 rounded-lg border border-black/10 bg-white px-2 py-2 text-sm text-brand-dark"
+                          value={mealDateYmd}
+                          onChange={(e) => setMealDateYmd(e.target.value)}
+                        >
+                          {weekOptions.map((o) => (
+                            <option key={o.ymd} value={o.ymd}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex min-w-[120px] flex-1 flex-col text-[10px] font-bold uppercase tracking-wide text-brand-dark/50">
+                        Slot
+                        <select
+                          className="mt-1 rounded-lg border border-black/10 bg-white px-2 py-2 text-sm text-brand-dark"
+                          value={mealSlot}
+                          onChange={(e) => setMealSlot(e.target.value)}
+                        >
+                          <option value="breakfast">Breakfast</option>
+                          <option value="lunch">Lunch</option>
+                          <option value="dinner">Dinner</option>
+                        </select>
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={planLoading || !canPostPlan}
+                      onClick={handleAddToMealPlan}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-brand-green/40 bg-brand-green/15 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-brand-dark hover:bg-brand-green/25 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {planLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Add to meal plan
+                    </button>
+                    {!canPostPlan && (
+                      <p className="mt-1 text-xs text-red-700">
+                        {browse ? 'Missing recipe id for catalog recipe.' : 'Missing MealDB id for this recipe.'}
+                      </p>
+                    )}
+                  </div>
+
+                  {groceryErr && (
+                    <p className="text-xs text-red-700">{groceryErr}</p>
+                  )}
+                  {groceryMsg && (
+                    <p className="text-xs text-brand-green">{groceryMsg}</p>
+                  )}
+                  {planErr && <p className="text-xs text-red-700">{planErr}</p>}
+                  {planMsg && <p className="text-xs text-brand-green">{planMsg}</p>}
+                </div>
               )}
             </section>
           )}

@@ -34,3 +34,27 @@ export const generateWeekPlan = (body) =>
     body,
     headers: authHeaders(),
   });
+
+/**
+ * POST /api/plans/week/slot/from-recipe
+ * Body: { weekStart, date, slot, recipe }
+ */
+export const postWeekSlotFromRecipe = (body) =>
+  request({
+    url: '/plans/week/slot/from-recipe',
+    method: 'POST',
+    body,
+    headers: authHeaders(),
+  });
+
+/**
+ * PATCH /api/plans/week/slot
+ * Body: { weekStart, date, slot, slotData } — pass slotData: null to clear
+ */
+export const patchWeekSlot = (body) =>
+  request({
+    url: '/plans/week/slot',
+    method: 'PATCH',
+    body,
+    headers: authHeaders(),
+  });

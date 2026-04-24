@@ -60,3 +60,15 @@ export const getPersonalizedRecommendations = (params = {}) =>
     params,
     headers: authHeaders(),
   });
+
+/**
+ * POST /api/recipes/mark-as-cooked
+ * Increments user meals_cooked metric. Body: { recipe_id: number } (use 0 if no numeric id).
+ */
+export const markRecipeAsCooked = (recipe_id) =>
+  request({
+    url: '/recipes/mark-as-cooked',
+    method: 'POST',
+    body: { recipe_id: Number(recipe_id) || 0 },
+    headers: authHeaders(),
+  });
