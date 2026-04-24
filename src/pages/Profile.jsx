@@ -8,8 +8,6 @@ const Profile = () => {
   const sections = [
     { id: 'preferences', label: 'Preferences' },
     { id: 'health-goals', label: 'Health Goals' },
-    { id: 'notifications', label: 'Notifications' },
-    { id: 'settings', label: 'Settings' },
   ];
 
   const renderContent = () => {
