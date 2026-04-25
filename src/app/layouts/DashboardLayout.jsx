@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Bell, UserPlus } from 'lucide-react';
 import SidebarNav from '../../components/layout/SidebarNav';
@@ -6,10 +6,14 @@ import NotificationInbox from '../../components/notifications/NotificationInbox'
 import FridgeHouseholdModal from '../../components/fridge/FridgeHouseholdModal';
 import { useNotifications } from '../../hooks/useNotifications';
 import { getFridgeItems } from '../../services/fridgeService';
+import { createCheckoutSession, getCurrentSubscription } from '../../services/billingService';
 
 const DashboardLayout = () => {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [householdOpen, setHouseholdOpen] = useState(false);
+  const [subscription, setSubscription] = useState(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState('');
   const [fridgeId, setFridgeId] = useState(() => {
     const raw =
       typeof localStorage !== 'undefined' ? localStorage.getItem('fridgeId') : null;
@@ -17,6 +21,70 @@ const DashboardLayout = () => {
     return Number.isFinite(n) && n > 0 ? n : null;
   });
   const { unreadCount, refresh: refreshUnread } = useNotifications();
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!localStorage.getItem('accessToken')) return;
+      try {
+        const res = await getCurrentSubscription();
+        if (!cancelled && res?.status === 'OK') setSubscription(res.data || null);
+      } catch {
+        // keep header usable even if subscription endpoint fails
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentTierRank = Number(subscription?.tier_rank);
+  const isMaxTier = Number.isFinite(currentTierRank) && currentTierRank >= 2;
+  const tierLabel = useMemo(() => {
+    const code = String(subscription?.plan_code || 'free').toLowerCase();
+    if (code === 'ultra_monthly') return 'Ultra';
+    if (code === 'premium_monthly') return 'Premium';
+    return 'Free';
+  }, [subscription?.plan_code]);
+  const tierBadgeTone = useMemo(() => {
+    if (tierLabel === 'Ultra') return 'border-[#d4b06a] bg-[#f8e7b8] text-[#5c4515]';
+    if (tierLabel === 'Premium') return 'border-green-300 bg-green-100 text-green-800';
+    return 'border-slate-300 bg-slate-100 text-slate-700';
+  }, [tierLabel]);
+
+  const currentPlanCode = useMemo(() => {
+    const code = String(subscription?.plan_code || 'free').toLowerCase();
+    if (code === 'ultra_monthly' || code === 'premium_monthly') return code;
+    return 'free';
+  }, [subscription?.plan_code]);
+
+  const TIERS = useMemo(
+    () => [
+      {
+        code: 'free',
+        name: 'Free',
+        price: '$0/mo',
+        features: ['Core meal planning', 'Basic fridge tracking', 'Standard grocery list'],
+        tone: 'border-slate-300 bg-slate-100',
+      },
+      {
+        code: 'premium_monthly',
+        name: 'Premium',
+        price: '$9.99/mo',
+        features: ['Advanced planning insights', 'Priority recommendations', 'Higher personalization'],
+        tone: 'border-green-300 bg-green-50',
+      },
+      {
+        code: 'ultra_monthly',
+        name: 'Ultra',
+        price: '$19.99/mo',
+        features: ['Everything in Premium', 'Top-tier AI meal suggestions', 'Best subscription tier support'],
+        tone: 'border-[#d4b06a] bg-[#f7e8be]',
+      },
+    ],
+    [],
+  );
 
   const openHouseholdModal = useCallback(async () => {
     try {
@@ -34,6 +102,20 @@ const DashboardLayout = () => {
     setHouseholdOpen(true);
   }, []);
 
+  const startUpgrade = useCallback(async (planCode) => {
+    if (planCode === 'free') return;
+    setCheckoutPlan(planCode);
+    try {
+      const res = await createCheckoutSession(planCode);
+      if (res?.status !== 'OK' || !res?.data?.checkout_url) {
+        throw new Error(res?.message || 'Could not start checkout.');
+      }
+      window.location.href = res.data.checkout_url;
+    } catch {
+      setCheckoutPlan('');
+    }
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-[#F7F7F2] text-brand-dark">
       <SidebarNav />
@@ -42,9 +124,19 @@ const DashboardLayout = () => {
         <header className="border-b border-black/5 bg-[#F7F7F2] px-6 py-5 sm:px-8">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Welcome back, chef!
-              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  Welcome back, chef!
+                </h1>
+                <span
+                  className={[
+                    'inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide',
+                    tierBadgeTone,
+                  ].join(' ')}
+                >
+                  Tier: {tierLabel}
+                </span>
+              </div>
               <p className="mt-1 text-sm text-brand-dark/60">
                 {unreadCount > 0
                   ? `You have ${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}.`
@@ -61,6 +153,15 @@ const DashboardLayout = () => {
                 <span className="hidden sm:inline">Add / join fridge</span>
                 <span className="sm:hidden">Fridge</span>
               </button>
+              {!isMaxTier && (
+                <button
+                  type="button"
+                  onClick={() => setUpgradeOpen(true)}
+                  className="inline-flex items-center rounded-xl border border-[#d4b06a] bg-[#f4d58a] px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#4f3b11] shadow-sm transition-colors hover:bg-[#ebcb78] sm:px-4 sm:text-sm"
+                >
+                  Upgrade
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setInboxOpen(true)}
@@ -101,6 +202,66 @@ const DashboardLayout = () => {
           window.dispatchEvent(new CustomEvent('fridge-household-joined'));
         }}
       />
+
+      {upgradeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-semibold text-brand-dark">Choose your plan</h3>
+                <p className="mt-1 text-sm text-brand-dark/60">
+                  Current plan: {currentPlanCode.replace('_monthly', '')}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-black/10 px-3 py-1.5 text-sm text-brand-dark hover:bg-black/5"
+                onClick={() => setUpgradeOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {TIERS.map((tier) => {
+                const isCurrent = tier.code === currentPlanCode;
+                return (
+                  <article
+                    key={tier.code}
+                    className={['rounded-2xl border px-4 py-4', tier.tone].join(' ')}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-brand-dark">{tier.name}</h4>
+                      {isCurrent && (
+                        <span className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-brand-dark">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-lg font-bold text-brand-dark">{tier.price}</p>
+                    <ul className="mt-3 space-y-1 text-xs text-brand-dark/80">
+                      {tier.features.map((feature) => (
+                        <li key={feature}>- {feature}</li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      disabled={isCurrent || checkoutPlan === tier.code}
+                      className="mt-4 inline-flex w-full items-center justify-center rounded-md border border-transparent bg-brand-brown px-4 py-2 text-sm font-medium text-brand-beige hover:bg-[#7b5e4f] disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => startUpgrade(tier.code)}
+                    >
+                      {isCurrent
+                        ? 'Current plan'
+                        : checkoutPlan === tier.code
+                          ? 'Redirecting...'
+                          : 'Upgrade plan'}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
