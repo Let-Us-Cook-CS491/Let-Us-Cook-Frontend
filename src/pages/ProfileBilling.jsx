@@ -70,6 +70,13 @@ const TIER_RANK = {
   ultra_monthly: 2,
 };
 
+const normalizePlanCode = (planCode) => {
+  const normalized = String(planCode || 'free').toLowerCase();
+  if (normalized === 'premium') return 'premium_monthly';
+  if (normalized === 'ultra') return 'ultra_monthly';
+  return normalized;
+};
+
 const apiErrorMessage = (err) => {
   if (!err) return 'Something went wrong.';
   if (typeof err === 'string') return err;
@@ -235,7 +242,7 @@ const ProfileBilling = () => {
     }
   };
 
-  const currentPlanCode = String(subscription?.plan_code || 'free').toLowerCase();
+  const currentPlanCode = normalizePlanCode(subscription?.plan_code || 'free');
 
   return (
     <div className="space-y-5">
@@ -522,14 +529,14 @@ const ProfileBilling = () => {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               {TIERS.map((tier) => {
-                const isCurrent =
-                  tier.code === currentPlanCode ||
-                  (tier.code === 'free' &&
-                    !['premium_monthly', 'ultra_monthly'].includes(currentPlanCode));
+                const isCurrent = tier.code === currentPlanCode;
                 const currentRank = TIER_RANK[currentPlanCode] ?? 0;
                 const tierRank = TIER_RANK[tier.code] ?? 0;
                 const isLowerTier = tierRank < currentRank;
                 const isDisabled = isCurrent || isLowerTier || checkoutPlan === tier.code;
+                const buttonTone = isLowerTier
+                  ? '!bg-slate-300 !text-slate-600 !border-slate-300 hover:!bg-slate-300'
+                  : '';
                 const tierTone =
                   tier.code === 'free'
                     ? 'border-slate-300 bg-slate-100'
@@ -556,7 +563,7 @@ const ProfileBilling = () => {
                     <Button
                       type="button"
                       disabled={isDisabled}
-                      className="mt-4 w-full"
+                      className={['mt-4 w-full', buttonTone].join(' ')}
                       onClick={() => startUpgrade(tier.code)}
                     >
                       {isCurrent
