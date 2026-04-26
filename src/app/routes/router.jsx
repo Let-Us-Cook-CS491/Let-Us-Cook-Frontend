@@ -12,6 +12,8 @@ import MealPlan from '../../pages/MealPlan';
 import Groceries from '../../pages/Groceries';
 import Profile from '../../pages/Profile';
 import ReceiptUpload from '../../pages/ReceiptUpload';
+import BillingSuccess from '../../pages/BillingSuccess';
+import BillingCancel from '../../pages/BillingCancel';
 
 export const router = createBrowserRouter([
   {
@@ -77,6 +79,14 @@ export const router = createBrowserRouter([
       {
         path: '/receipt-upload',
         element: <ReceiptUpload />,
+      },
+      {
+        path: '/billing/success',
+        element: <BillingSuccess />,
+      },
+      {
+        path: '/billing/cancel',
+        element: <BillingCancel />,
       },
     ],
   },

@@ -1,14 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import HealthGoals from './HealthGoals';
 import DietPreferences from './DietPreferences';
+import ProfileBilling from './ProfileBilling';
 
 const Profile = () => {
-  const [activeSection, setActiveSection] = useState('preferences');
+  const location = useLocation();
 
   const sections = [
     { id: 'preferences', label: 'Preferences' },
     { id: 'health-goals', label: 'Health Goals' },
+    { id: 'billing', label: 'Billing' },
   ];
+  const defaultSection = useMemo(() => {
+    const q = new URLSearchParams(location.search).get('section');
+    if (q && sections.some((s) => s.id === q)) return q;
+    return 'preferences';
+  }, [location.search]);
+  const [activeSection, setActiveSection] = useState(defaultSection);
+
+  useEffect(() => {
+    setActiveSection(defaultSection);
+  }, [defaultSection]);
 
   const renderContent = () => {
     if (activeSection === 'health-goals') {
@@ -17,6 +30,9 @@ const Profile = () => {
 
     if (activeSection === 'preferences') {
       return <DietPreferences />;
+    }
+    if (activeSection === 'billing') {
+      return <ProfileBilling />;
     }
 
     return (
