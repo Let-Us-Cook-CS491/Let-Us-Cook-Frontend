@@ -64,6 +64,12 @@ const TIERS = [
   },
 ];
 
+const TIER_RANK = {
+  free: 0,
+  premium_monthly: 1,
+  ultra_monthly: 2,
+};
+
 const apiErrorMessage = (err) => {
   if (!err) return 'Something went wrong.';
   if (typeof err === 'string') return err;
@@ -520,6 +526,10 @@ const ProfileBilling = () => {
                   tier.code === currentPlanCode ||
                   (tier.code === 'free' &&
                     !['premium_monthly', 'ultra_monthly'].includes(currentPlanCode));
+                const currentRank = TIER_RANK[currentPlanCode] ?? 0;
+                const tierRank = TIER_RANK[tier.code] ?? 0;
+                const isLowerTier = tierRank < currentRank;
+                const isDisabled = isCurrent || isLowerTier || checkoutPlan === tier.code;
                 const tierTone =
                   tier.code === 'free'
                     ? 'border-slate-300 bg-slate-100'
@@ -545,13 +555,15 @@ const ProfileBilling = () => {
                     </ul>
                     <Button
                       type="button"
-                      disabled={isCurrent || checkoutPlan === tier.code}
+                      disabled={isDisabled}
                       className="mt-4 w-full"
                       onClick={() => startUpgrade(tier.code)}
                     >
                       {isCurrent
                         ? 'Current plan'
-                        : checkoutPlan === tier.code
+                        : isLowerTier
+                          ? 'Lower tier unavailable'
+                          : checkoutPlan === tier.code
                           ? 'Redirecting...'
                           : 'Upgrade plan'}
                     </Button>
