@@ -8,6 +8,20 @@ import { useNotifications } from '../../hooks/useNotifications';
 import { getFridgeItems } from '../../services/fridgeService';
 import { createCheckoutSession, getCurrentSubscription } from '../../services/billingService';
 
+const TIER_RANK = {
+  free: 0,
+  premium_monthly: 1,
+  ultra_monthly: 2,
+};
+
+const normalizePlanCode = (planCode) => {
+  const code = String(planCode || 'free').toLowerCase();
+  if (code === 'premium') return 'premium_monthly';
+  if (code === 'ultra') return 'ultra_monthly';
+  if (code === 'premium_monthly' || code === 'ultra_monthly') return code;
+  return 'free';
+};
+
 const DashboardLayout = () => {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [householdOpen, setHouseholdOpen] = useState(false);
@@ -42,7 +56,7 @@ const DashboardLayout = () => {
   const currentTierRank = Number(subscription?.tier_rank);
   const isMaxTier = Number.isFinite(currentTierRank) && currentTierRank >= 2;
   const tierLabel = useMemo(() => {
-    const code = String(subscription?.plan_code || 'free').toLowerCase();
+    const code = normalizePlanCode(subscription?.plan_code);
     if (code === 'ultra_monthly') return 'Ultra';
     if (code === 'premium_monthly') return 'Premium';
     return 'Free';
@@ -54,9 +68,7 @@ const DashboardLayout = () => {
   }, [tierLabel]);
 
   const currentPlanCode = useMemo(() => {
-    const code = String(subscription?.plan_code || 'free').toLowerCase();
-    if (code === 'ultra_monthly' || code === 'premium_monthly') return code;
-    return 'free';
+    return normalizePlanCode(subscription?.plan_code);
   }, [subscription?.plan_code]);
 
   const TIERS = useMemo(
@@ -224,6 +236,13 @@ const DashboardLayout = () => {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               {TIERS.map((tier) => {
                 const isCurrent = tier.code === currentPlanCode;
+                const currentRank = TIER_RANK[currentPlanCode] ?? 0;
+                const tierRank = TIER_RANK[tier.code] ?? 0;
+                const isLowerTier = tierRank < currentRank;
+                const isDisabled = isCurrent || isLowerTier || checkoutPlan === tier.code;
+                const buttonTone = isLowerTier
+                  ? '!bg-slate-300 !text-slate-600 !border-slate-300 hover:!bg-slate-300'
+                  : '';
                 return (
                   <article
                     key={tier.code}
@@ -245,12 +264,17 @@ const DashboardLayout = () => {
                     </ul>
                     <button
                       type="button"
-                      disabled={isCurrent || checkoutPlan === tier.code}
-                      className="mt-4 inline-flex w-full items-center justify-center rounded-md border border-transparent bg-brand-brown px-4 py-2 text-sm font-medium text-brand-beige hover:bg-[#7b5e4f] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isDisabled}
+                      className={[
+                        'mt-4 inline-flex w-full items-center justify-center rounded-md border border-transparent bg-brand-brown px-4 py-2 text-sm font-medium text-brand-beige hover:bg-[#7b5e4f] disabled:cursor-not-allowed disabled:opacity-60',
+                        buttonTone,
+                      ].join(' ')}
                       onClick={() => startUpgrade(tier.code)}
                     >
                       {isCurrent
                         ? 'Current plan'
+                        : isLowerTier
+                          ? 'Lower tier unavailable'
                         : checkoutPlan === tier.code
                           ? 'Redirecting...'
                           : 'Upgrade plan'}
